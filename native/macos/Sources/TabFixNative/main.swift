@@ -342,13 +342,21 @@ final class CorrectionEngine {
 
 struct TextCandidate {
   let element: AXUIElement
-  let fullText: String
+  let fullValue: String?
   let sourceText: String
   let replacementRange: CFRange
+  let originalSelectedRange: CFRange
   let caretBounds: CGRect
   let correction: CorrectionResult
   let appName: String?
   let bundleIdentifier: String?
+  let processIdentifier: pid_t?
+}
+
+struct TextSnapshot {
+  let text: String
+  let baseLocation: Int
+  let fullValue: String?
 }
 
 final class CrossAppService {
@@ -374,7 +382,7 @@ final class CrossAppService {
   }
 
   private func installEventTap() {
-    let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+    let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
     let ref = Unmanaged.passUnretained(self).toOpaque()
 
     guard let tap = CGEvent.tapCreate(
@@ -415,13 +423,26 @@ final class CrossAppService {
       return Unmanaged.passUnretained(event)
     }
 
+    if type == .flagsChanged {
+      debounceTimer?.invalidate()
+      clearCandidate(reason: "modifier")
+      return Unmanaged.passUnretained(event)
+    }
+
     guard type == .keyDown else {
       return Unmanaged.passUnretained(event)
     }
 
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+    let flags = event.flags
 
     if keyCode == 48 {
+      if hasApplyBlockingModifiers(flags) {
+        debounceTimer?.invalidate()
+        clearCandidate(reason: "tab-with-modifier")
+        return Unmanaged.passUnretained(event)
+      }
+
       if applyCandidate() {
         return nil
       }
@@ -429,18 +450,44 @@ final class CrossAppService {
       return Unmanaged.passUnretained(event)
     }
 
-    let flags = event.flags
     if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
+      debounceTimer?.invalidate()
       clearCandidate(reason: "modifier")
       return Unmanaged.passUnretained(event)
     }
 
     if candidate != nil {
-      clearCandidate(reason: "typing")
+      clearCandidate(reason: "key")
     }
 
-    scheduleInspection()
+    if shouldInspectAfterKey(keyCode) {
+      scheduleInspection()
+    }
+
     return Unmanaged.passUnretained(event)
+  }
+
+  private func hasApplyBlockingModifiers(_ flags: CGEventFlags) -> Bool {
+    flags.contains(.maskCommand) ||
+      flags.contains(.maskControl) ||
+      flags.contains(.maskAlternate) ||
+      flags.contains(.maskShift)
+  }
+
+  private func shouldInspectAfterKey(_ keyCode: Int64) -> Bool {
+    let ignoredKeys: Set<Int64> = [
+      48, // Tab
+      53, // Escape
+      55, 54, // Command
+      56, 60, // Shift
+      58, 61, // Option
+      59, 62, // Control
+      63, // Fn
+      122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90, // Function keys
+      115, 119, 116, 121, 123, 124, 125, 126 // Home, End, Page, arrows
+    ]
+
+    return !ignoredKeys.contains(keyCode)
   }
 
   private func scheduleInspection() {
@@ -451,14 +498,27 @@ final class CrossAppService {
   @objc private func inspectFocusedText() {
     guard !isFrontmostAppTabFix(),
           let element = focusedElement(),
-          let fullText = stringAttribute(element, kAXValueAttribute as String),
           let selectedRange = selectedTextRange(element),
-          let sourceRange = sourceRange(in: fullText, selectedRange: selectedRange) else {
+          let snapshot = textSnapshot(element, selectedRange: selectedRange) else {
       clearCandidate(reason: "no-editable-text")
       return
     }
 
-    let source = (fullText as NSString).substring(with: NSRange(location: sourceRange.location, length: sourceRange.length))
+    let relativeSelectedRange = CFRange(
+      location: selectedRange.location - snapshot.baseLocation,
+      length: selectedRange.length
+    )
+    guard relativeSelectedRange.location >= 0,
+          let relativeSourceRange = sourceRange(in: snapshot.text, selectedRange: relativeSelectedRange) else {
+      clearCandidate(reason: "no-source-range")
+      return
+    }
+
+    let sourceRange = CFRange(
+      location: snapshot.baseLocation + relativeSourceRange.location,
+      length: relativeSourceRange.length
+    )
+    let source = (snapshot.text as NSString).substring(with: NSRange(location: relativeSourceRange.location, length: relativeSourceRange.length))
     guard source.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 else {
       clearCandidate(reason: "empty-source")
       return
@@ -486,13 +546,15 @@ final class CrossAppService {
 
     candidate = TextCandidate(
       element: element,
-      fullText: fullText,
+      fullValue: snapshot.fullValue,
       sourceText: source,
       replacementRange: sourceRange,
+      originalSelectedRange: selectedRange,
       caretBounds: normalizedBounds,
       correction: correction,
       appName: app?.localizedName,
-      bundleIdentifier: app?.bundleIdentifier
+      bundleIdentifier: app?.bundleIdentifier,
+      processIdentifier: app?.processIdentifier
     )
 
     writeJson(CandidateEvent(
@@ -509,6 +571,18 @@ final class CrossAppService {
       return false
     }
 
+    guard candidate.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier else {
+      clearCandidate(reason: "frontmost-changed")
+      return false
+    }
+
+    guard let focusedElement = focusedElement(),
+          CFEqual(focusedElement, candidate.element),
+          sourceStillMatches(candidate) else {
+      clearCandidate(reason: "stale-candidate")
+      return false
+    }
+
     let didApply = replace(candidate)
     if didApply {
       writeJson(NativeEvent(type: "applied", payload: candidate.correction))
@@ -522,61 +596,60 @@ final class CrossAppService {
   }
 
   private func replace(_ candidate: TextCandidate) -> Bool {
-    var replacementRange = candidate.replacementRange
-    guard let rangeValue = AXValueCreate(.cfRange, &replacementRange) else {
-      return false
+    if select(candidate.replacementRange, in: candidate.element) {
+      let selectedTextResult = AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextAttribute as CFString, candidate.correction.output as CFString)
+      if selectedTextResult == .success {
+        if replacementMatches(candidate) || !canReadCandidateText(candidate) {
+          return true
+        }
+      }
     }
 
-    AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
+    if let currentValue = stringAttribute(candidate.element, kAXValueAttribute as String), !currentValue.isEmpty {
+      let nsText = currentValue as NSString
+      guard candidate.replacementRange.location + candidate.replacementRange.length <= nsText.length else {
+        restoreSelection(candidate)
+        return false
+      }
+      let nextValue = nsText.replacingCharacters(
+        in: NSRange(location: candidate.replacementRange.location, length: candidate.replacementRange.length),
+        with: candidate.correction.output
+      )
+
+      let valueResult = AXUIElementSetAttributeValue(candidate.element, kAXValueAttribute as CFString, nextValue as CFString)
+      if valueResult == .success {
+        var caretRange = CFRange(location: candidate.replacementRange.location + (candidate.correction.output as NSString).length, length: 0)
+        if let caretValue = AXValueCreate(.cfRange, &caretRange) {
+          AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, caretValue)
+        }
+
+        if replacementMatches(candidate) || !canReadCandidateText(candidate) {
+          return true
+        }
+      }
+    }
 
     if pasteFallback(candidate) {
       return true
     }
 
-    let selectedTextResult = AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextAttribute as CFString, candidate.correction.output as CFString)
-    if selectedTextResult == .success {
-      return true
-    }
-
-    let nsText = candidate.fullText as NSString
-    let nextValue = nsText.replacingCharacters(
-      in: NSRange(location: candidate.replacementRange.location, length: candidate.replacementRange.length),
-      with: candidate.correction.output
-    )
-
-    let valueResult = AXUIElementSetAttributeValue(candidate.element, kAXValueAttribute as CFString, nextValue as CFString)
-    if valueResult == .success {
-      var caretRange = CFRange(location: candidate.replacementRange.location + (candidate.correction.output as NSString).length, length: 0)
-      if let caretValue = AXValueCreate(.cfRange, &caretRange) {
-        AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, caretValue)
-      }
-      return true
-    }
-
-    return pasteFallback(candidate)
+    restoreSelection(candidate)
+    return false
   }
 
   private func pasteFallback(_ candidate: TextCandidate) -> Bool {
-    var replacementRange = candidate.replacementRange
-    guard let rangeValue = AXValueCreate(.cfRange, &replacementRange) else {
+    guard select(candidate.replacementRange, in: candidate.element) else {
       return false
     }
 
-    AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
-
-    Thread.sleep(forTimeInterval: 0.04)
-
-    var latestReplacementRange = candidate.replacementRange
-    if let latestRangeValue = AXValueCreate(.cfRange, &latestReplacementRange) {
-      AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, latestRangeValue)
-    }
+    Thread.sleep(forTimeInterval: 0.08)
 
     let pasteboard = NSPasteboard.general
     let previous = pasteboard.string(forType: .string)
     pasteboard.clearContents()
     pasteboard.setString(candidate.correction.output, forType: .string)
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
       CrossAppService.postPasteShortcut()
     }
 
@@ -586,6 +659,69 @@ final class CrossAppService {
       if let previous {
         pasteboard.setString(previous, forType: .string)
       }
+    }
+
+    return true
+  }
+
+  private func sourceStillMatches(_ candidate: TextCandidate) -> Bool {
+    textInRange(candidate.element, range: candidate.replacementRange) == candidate.sourceText
+  }
+
+  private func replacementMatches(_ candidate: TextCandidate) -> Bool {
+    Thread.sleep(forTimeInterval: 0.06)
+
+    let outputLength = (candidate.correction.output as NSString).length
+    let outputRange = CFRange(location: candidate.replacementRange.location, length: outputLength)
+    return textInRange(candidate.element, range: outputRange) == candidate.correction.output
+  }
+
+  private func canReadCandidateText(_ candidate: TextCandidate) -> Bool {
+    textInRange(candidate.element, range: candidate.replacementRange) != nil
+  }
+
+  private func textInRange(_ element: AXUIElement, range: CFRange) -> String? {
+    if let fullValue = stringAttribute(element, kAXValueAttribute as String) {
+      let nsText = fullValue as NSString
+      guard range.location >= 0,
+            range.length >= 0,
+            range.location + range.length <= nsText.length else {
+        return nil
+      }
+
+      return nsText.substring(with: NSRange(location: range.location, length: range.length))
+    }
+
+    return stringForRange(element, range: range)
+  }
+
+  private func restoreSelection(_ candidate: TextCandidate) {
+    _ = setSelectedRange(candidate.originalSelectedRange, in: candidate.element)
+  }
+
+  private func select(_ range: CFRange, in element: AXUIElement) -> Bool {
+    guard setSelectedRange(range, in: element) else {
+      return false
+    }
+
+    Thread.sleep(forTimeInterval: 0.03)
+
+    guard let selectedRange = selectedTextRange(element) else {
+      return true
+    }
+
+    return selectedRange.location == range.location && selectedRange.length == range.length
+  }
+
+  private func setSelectedRange(_ range: CFRange, in element: AXUIElement) -> Bool {
+    var mutableRange = range
+    guard let rangeValue = AXValueCreate(.cfRange, &mutableRange) else {
+      return false
+    }
+
+    let result = AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
+    guard result == .success else {
+      return false
     }
 
     return true
@@ -787,6 +923,40 @@ final class CrossAppService {
     return CFRange(location: start, length: end - start)
   }
 
+  private func textSnapshot(_ element: AXUIElement, selectedRange: CFRange) -> TextSnapshot? {
+    guard selectedRange.location >= 0 else {
+      return nil
+    }
+
+    if let fullValue = stringAttribute(element, kAXValueAttribute as String), !fullValue.isEmpty {
+      return TextSnapshot(text: fullValue, baseLocation: 0, fullValue: fullValue)
+    }
+
+    return rangedTextSnapshot(element, selectedRange: selectedRange)
+  }
+
+  private func rangedTextSnapshot(_ element: AXUIElement, selectedRange: CFRange) -> TextSnapshot? {
+    guard let characterCount = intAttribute(element, kAXNumberOfCharactersAttribute as String),
+          characterCount > 0 else {
+      return nil
+    }
+
+    let selectedStart = min(max(0, selectedRange.location), characterCount)
+    let selectedEnd = min(max(selectedStart, selectedRange.location + selectedRange.length), characterCount)
+    let radius = 4000
+    let start = max(0, selectedStart - radius)
+    let end = min(characterCount, max(selectedEnd + radius, selectedStart + radius))
+    let length = end - start
+
+    guard length > 0,
+          let text = stringForRange(element, range: CFRange(location: start, length: length)),
+          !text.isEmpty else {
+      return nil
+    }
+
+    return TextSnapshot(text: text, baseLocation: start, fullValue: nil)
+  }
+
   private func boundsForRange(_ element: AXUIElement, range: CFRange) -> CGRect? {
     var mutableRange = range
     guard let rangeValue = AXValueCreate(.cfRange, &mutableRange) else {
@@ -813,6 +983,27 @@ final class CrossAppService {
     return rect
   }
 
+  private func stringForRange(_ element: AXUIElement, range: CFRange) -> String? {
+    var mutableRange = range
+    guard let rangeValue = AXValueCreate(.cfRange, &mutableRange) else {
+      return nil
+    }
+
+    var value: CFTypeRef?
+    let result = AXUIElementCopyParameterizedAttributeValue(
+      element,
+      kAXStringForRangeParameterizedAttribute as CFString,
+      rangeValue,
+      &value
+    )
+
+    guard result == .success else {
+      return nil
+    }
+
+    return value as? String
+  }
+
   private func fallbackBounds(_ element: AXUIElement) -> CGRect? {
     guard let position = axPointAttribute(element, kAXPositionAttribute as String),
           let size = axSizeAttribute(element, kAXSizeAttribute as String) else {
@@ -831,6 +1022,17 @@ final class CrossAppService {
     }
 
     return value as? String
+  }
+
+  private func intAttribute(_ element: AXUIElement, _ attribute: String) -> Int? {
+    var value: CFTypeRef?
+    let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+
+    guard result == .success, let number = value as? NSNumber else {
+      return nil
+    }
+
+    return number.intValue
   }
 
   private func axPointAttribute(_ element: AXUIElement, _ attribute: String) -> CGPoint? {

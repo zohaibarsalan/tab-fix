@@ -14,6 +14,7 @@
     "build": "npm run clean && npm run build:native && npm run build:main && npm run build:renderer",
     "pack:mac": "npm run build:icons && npm run build && electron-builder --mac dir",
     "dist:mac": "npm run build:icons && npm run build && electron-builder --mac dmg",
+    "open:mac": "open \"release/mac-arm64/Tab Fix.app\"",
     "dev": "npm run build:native && node scripts/dev.mjs",
     "start": "npm run build && node scripts/run-electron.mjs",
     "typecheck": "tsc -p apps/desktop/tsconfig.renderer.json --noEmit && tsc -p apps/desktop/tsconfig.main.json --noEmit"

@@ -28,7 +28,11 @@ for (const [fileName, size] of pngFiles) {
   writeFileSync(path.join(iconsetDir, fileName), renderLogoPng(size));
 }
 
-writeFileSync(outputMenubarPng, renderLogoPng(44));
+writeFileSync(outputMenubarPng, renderLogoPng(44, {
+  border: [0, 0, 0, 255],
+  box: [255, 255, 255, 255],
+  mark: [0, 0, 0, 255]
+}));
 
 const result = spawnSync("iconutil", ["-c", "icns", iconsetDir, "-o", outputIcns], {
   stdio: "inherit"
@@ -38,7 +42,7 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-function renderLogoPng(size) {
+function renderLogoPng(size, colors = {}) {
   const pixels = Buffer.alloc(size * size * 4);
   const scale = size / 96;
   const rect = {
@@ -48,19 +52,32 @@ function renderLogoPng(size) {
     height: 76 * scale,
     radius: 12 * scale
   };
-  const red = [223, 55, 45, 255];
-  const white = [255, 253, 249, 255];
+  const box = colors.box ?? [223, 55, 45, 255];
+  const mark = colors.mark ?? [255, 253, 249, 255];
+  const border = colors.border;
+  const borderWidth = border ? 7 * scale : 0;
+  const innerRect = {
+    x: rect.x + borderWidth,
+    y: rect.y + borderWidth,
+    width: rect.width - borderWidth * 2,
+    height: rect.height - borderWidth * 2,
+    radius: Math.max(0, rect.radius - borderWidth)
+  };
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const index = (y * size + x) * 4;
 
-      if (insideRoundedRect(x + 0.5, y + 0.5, rect)) {
-        pixels.set(red, index);
+      if (border && insideRoundedRect(x + 0.5, y + 0.5, rect)) {
+        pixels.set(border, index);
+      }
+
+      if (insideRoundedRect(x + 0.5, y + 0.5, border ? innerRect : rect)) {
+        pixels.set(box, index);
       }
 
       if (insideT(x + 0.5, y + 0.5, scale)) {
-        pixels.set(white, index);
+        pixels.set(mark, index);
       }
     }
   }

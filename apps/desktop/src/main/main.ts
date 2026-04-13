@@ -43,7 +43,16 @@ function trayIcon(): Electron.NativeImage {
     return icon.resize({ width: 22, height: 22 });
   }
 
-  return tabFixIcon(64).resize({ width: 22, height: 22 });
+  return nativeImage.createFromDataURL(
+    "data:image/svg+xml;utf8," +
+      encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+          <rect x="8" y="8" width="48" height="48" rx="8" fill="#000"/>
+          <rect x="12" y="12" width="40" height="40" rx="6" fill="#fff"/>
+          <path d="M20 19h24v8h-8v20h-8V27h-8z" fill="#000"/>
+        </svg>
+      `)
+  ).resize({ width: 22, height: 22 });
 }
 
 function rendererUrl(page: "app" | "overlay"): string {
@@ -81,18 +90,17 @@ function createPanelWindow(): BrowserWindow {
   });
 
   panelWindow.once("ready-to-show", () => panelWindow?.show());
-  panelWindow.on("close", (event) => {
+  panelWindow.on("close", () => {
     if (isQuitting) {
       return;
     }
 
-    event.preventDefault();
-    panelWindow?.hide();
     hideFromAppSwitcher();
   });
   panelWindow.on("closed", () => {
     panelWindow = null;
   });
+  setupEditableContextMenu(panelWindow);
 
   if (process.env.TAB_FIX_DEV_SERVER_URL) {
     void panelWindow.loadURL(rendererUrl("app"));
@@ -118,6 +126,7 @@ function createOverlayWindow(): BrowserWindow {
     skipTaskbar: true,
     focusable: false,
     alwaysOnTop: true,
+    hiddenInMissionControl: true,
     hasShadow: false,
     show: false,
     webPreferences: {
@@ -200,12 +209,48 @@ function setupApplicationMenu(): void {
       ]
     },
     {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { type: "separator" },
+        { role: "selectAll" }
+      ]
+    },
+    {
       label: "File",
       submenu: [
         { label: "Close Window", accelerator: "Command+W", click: () => panelWindow?.close() }
       ]
     }
   ]));
+}
+
+function setupEditableContextMenu(window: BrowserWindow): void {
+  window.webContents.on("context-menu", (_event, params) => {
+    if (!params.isEditable) {
+      return;
+    }
+
+    Menu.buildFromTemplate([
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "pasteAndMatchStyle" },
+      { role: "delete" },
+      { type: "separator" },
+      { role: "selectAll" }
+    ]).popup({ window });
+  });
 }
 
 async function requestNativePermissions() {
