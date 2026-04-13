@@ -7,7 +7,7 @@ declare global {
   }
 }
 
-const idleDelayMs = 420;
+const idleDelayMs = 260;
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -122,8 +122,8 @@ function positionHint(): void {
   const fieldRect = input.getBoundingClientRect();
 
   void window.tabFix.showOverlay({
-    x: Math.round(window.screenX + fieldRect.left + 18),
-    y: Math.round(window.screenY + fieldRect.top - 42),
+    x: Math.round(window.screenX + fieldRect.left + 14),
+    y: Math.round(window.screenY + fieldRect.top - 34),
     text: "Tab"
   });
 }

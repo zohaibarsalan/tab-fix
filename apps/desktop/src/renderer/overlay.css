@@ -14,26 +14,31 @@ body,
     sans-serif;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 .bubble {
   display: inline-flex;
   align-items: center;
-  margin: 4px;
+  margin: 3px;
   border: 1px solid #101111;
-  border-radius: 8px;
+  border-radius: 7px;
   background: #fffdf9;
   color: #101111;
-  padding: 5px;
-  box-shadow: 4px 4px 0 rgba(16, 17, 17, 0.18);
-  font-size: 14px;
+  padding: 3px;
+  box-shadow: 3px 3px 0 rgba(16, 17, 17, 0.18);
+  font-size: 12px;
   font-weight: 800;
 }
 
 kbd {
-  min-width: 58px;
-  border-radius: 6px;
-  background: #d83b2d;
+  width: 42px;
+  border-radius: 5px;
+  background: #dc3b2f;
   color: #fffdf9;
-  padding: 9px 10px;
+  padding: 5px 4px;
   text-align: center;
   font: inherit;
+  line-height: 14px;
 }

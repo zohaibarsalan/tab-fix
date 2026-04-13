@@ -357,6 +357,7 @@ final class CrossAppService {
   private var runLoopSource: CFRunLoopSource?
   private var debounceTimer: Timer?
   private var candidate: TextCandidate?
+  private var lastInspectionKey: String?
 
   func run() {
     writeJson(StatusEvent(type: "status", status: NativeCommand.status()))
@@ -405,6 +406,14 @@ final class CrossAppService {
   }
 
   private func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+      if let eventTap {
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+      }
+
+      return Unmanaged.passUnretained(event)
+    }
+
     guard type == .keyDown else {
       return Unmanaged.passUnretained(event)
     }
@@ -425,13 +434,17 @@ final class CrossAppService {
       return Unmanaged.passUnretained(event)
     }
 
+    if candidate != nil {
+      clearCandidate(reason: "typing")
+    }
+
     scheduleInspection()
     return Unmanaged.passUnretained(event)
   }
 
   private func scheduleInspection() {
     debounceTimer?.invalidate()
-    debounceTimer = Timer.scheduledTimer(timeInterval: 0.45, target: self, selector: #selector(inspectFocusedText), userInfo: nil, repeats: false)
+    debounceTimer = Timer.scheduledTimer(timeInterval: 0.22, target: self, selector: #selector(inspectFocusedText), userInfo: nil, repeats: false)
   }
 
   @objc private func inspectFocusedText() {
@@ -450,11 +463,18 @@ final class CrossAppService {
       return
     }
 
+    let inspectionKey = "\(sourceRange.location):\(sourceRange.length):\(source)"
+    if inspectionKey == lastInspectionKey, candidate != nil {
+      return
+    }
+
     let correction = engine.correct(source)
     guard correction.changed else {
       clearCandidate(reason: "no-change")
       return
     }
+
+    lastInspectionKey = inspectionKey
 
     let bounds = boundsForRange(element, range: CFRange(location: max(selectedRange.location, sourceRange.location), length: 0))
       ?? boundsForRange(element, range: sourceRange)
@@ -473,8 +493,8 @@ final class CrossAppService {
 
     writeJson(CandidateEvent(
       type: "candidate",
-      x: Int(bounds.maxX),
-      y: Int(max(0, bounds.minY - 70)),
+      x: Int(bounds.maxX + 6),
+      y: Int(max(0, bounds.minY - 42)),
       correction: correction,
       appName: NSWorkspace.shared.frontmostApplication?.localizedName
     ))
@@ -563,6 +583,7 @@ final class CrossAppService {
   private func clearCandidate(reason: String) {
     if candidate != nil {
       candidate = nil
+      lastInspectionKey = nil
       writeJson(["type": "hide", "reason": reason])
     }
   }

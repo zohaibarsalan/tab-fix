@@ -10,6 +10,11 @@ let overlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let trayMenu: Menu | null = null;
 
+const overlaySize = {
+  width: 58,
+  height: 38
+};
+
 function rendererUrl(page: "app" | "overlay"): string {
   const devServer = process.env.TAB_FIX_DEV_SERVER_URL;
 
@@ -63,8 +68,8 @@ function createOverlayWindow(): BrowserWindow {
   }
 
   overlayWindow = new BrowserWindow({
-    width: 86,
-    height: 54,
+    width: overlaySize.width,
+    height: overlaySize.height,
     frame: false,
     transparent: true,
     resizable: false,
@@ -109,14 +114,14 @@ function setupTray(): void {
     "data:image/svg+xml;utf8," +
       encodeURIComponent(`
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-          <rect x="4" y="4" width="24" height="24" rx="7" fill="black"/>
-          <path d="M9 10h14v3h-5v11h-4V13H9z" fill="white"/>
-          <path d="M22 7l4-4M24 12l5-1M10 25l-4 4" stroke="black" stroke-width="2" stroke-linecap="round"/>
+          <rect x="5" y="5" width="22" height="22" rx="6" fill="black"/>
+          <path d="M9 10h14v4h-5v10h-4V14H9z" fill="white"/>
         </svg>
       `)
   );
-  icon.setTemplateImage(true);
-  tray = new Tray(icon);
+  const trayIcon = icon.resize({ width: 18, height: 18 });
+  trayIcon.setTemplateImage(true);
+  tray = new Tray(trayIcon);
   tray.setToolTip("Tab Fix");
 
   trayMenu = Menu.buildFromTemplate([
@@ -180,8 +185,8 @@ function handleNativeEvent(event: NativeHelperEvent): void {
 function showOverlay(payload: OverlayPayload): void {
   const overlay = createOverlayWindow();
   const display = screen.getDisplayNearestPoint({ x: payload.x, y: payload.y });
-  const overlayWidth = 86;
-  const overlayHeight = 54;
+  const overlayWidth = overlaySize.width;
+  const overlayHeight = overlaySize.height;
   const x = Math.min(Math.max(payload.x, display.workArea.x), display.workArea.x + display.workArea.width - overlayWidth);
   const y = Math.min(Math.max(payload.y, display.workArea.y), display.workArea.y + display.workArea.height - overlayHeight);
 
