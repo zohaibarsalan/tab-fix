@@ -6,6 +6,34 @@ type Rule = {
   apply: (text: string) => string;
 };
 
+const commonMisspellings = new Map<string, string>([
+  ["acommodate", "accommodate"],
+  ["acheive", "achieve"],
+  ["adress", "address"],
+  ["arguement", "argument"],
+  ["becuase", "because"],
+  ["beleive", "believe"],
+  ["calender", "calendar"],
+  ["definately", "definitely"],
+  ["enviroment", "environment"],
+  ["existance", "existence"],
+  ["freind", "friend"],
+  ["goverment", "government"],
+  ["grast", "great"],
+  ["greatful", "grateful"],
+  ["happend", "happened"],
+  ["intresting", "interesting"],
+  ["knowlege", "knowledge"],
+  ["neccessary", "necessary"],
+  ["occured", "occurred"],
+  ["recieve", "receive"],
+  ["seperate", "separate"],
+  ["teh", "the"],
+  ["thier", "their"],
+  ["tommorow", "tomorrow"],
+  ["wierd", "weird"]
+]);
+
 const replacementRules: Rule[] = [
   {
     label: "Collapsed repeated whitespace",
@@ -44,7 +72,13 @@ const replacementRules: Rule[] = [
     apply: (text) =>
       text
         .replace(/\bthis are\b/gi, "this is")
+        .replace(/\bthis seem\b/gi, "this seems")
+        .replace(/\bthis look\b/gi, "this looks")
+        .replace(/\bthis feel\b/gi, "this feels")
         .replace(/\bthat are\b/gi, "that is")
+        .replace(/\bthat seem\b/gi, "that seems")
+        .replace(/\bthat look\b/gi, "that looks")
+        .replace(/\bthat feel\b/gi, "that feels")
         .replace(/\bthese is\b/gi, "these are")
         .replace(/\bthose is\b/gi, "those are")
         .replace(/\byou is\b/gi, "you are")
@@ -55,6 +89,10 @@ const replacementRules: Rule[] = [
   {
     label: "Fixed article before vowel sound",
     apply: (text) => text.replace(/\ba ([aeiouAEIOU])/g, "an $1")
+  },
+  {
+    label: "Added comma after opening interjection",
+    apply: (text) => text.replace(/^(wow|hey|yeah|yes|no|well|okay|ok)\s+/i, "$1, ")
   }
 ];
 
@@ -79,6 +117,30 @@ function addTerminalPunctuation(text: string): string {
   return `${text}.`;
 }
 
+function preserveCase(source: string, replacement: string): string {
+  if (source.toUpperCase() === source) {
+    return replacement.toUpperCase();
+  }
+
+  if (source[0]?.toUpperCase() === source[0]) {
+    return `${replacement[0]?.toUpperCase() ?? ""}${replacement.slice(1)}`;
+  }
+
+  return replacement;
+}
+
+function correctKnownMisspellings(text: string): string {
+  return text.replace(/\b[A-Za-z']+\b/g, (word) => {
+    const replacement = commonMisspellings.get(word.toLowerCase());
+
+    if (!replacement) {
+      return word;
+    }
+
+    return preserveCase(word, replacement);
+  });
+}
+
 export class LocalRuleEngine implements CorrectionEngine {
   async correct(request: CorrectionRequest): Promise<CorrectionResult> {
     const startedAt = performance.now();
@@ -93,6 +155,12 @@ export class LocalRuleEngine implements CorrectionEngine {
         fixes.push(rule.label);
         fixed = next;
       }
+    }
+
+    const spellingFixed = correctKnownMisspellings(fixed);
+    if (spellingFixed !== fixed) {
+      fixes.push("Fixed common spelling errors");
+      fixed = spellingFixed;
     }
 
     const capitalized = capitalizeSentenceStarts(fixed);

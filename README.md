@@ -20,6 +20,20 @@ It should work inside browsers, notes apps, chat apps, code editors, email clien
 
 The product succeeds if pressing `Tab` feels faster than manually correcting the sentence.
 
+## Product Shape
+
+Tab Fix should live in the macOS menu bar.
+
+Clicking the menu bar item opens the Tab Fix panel with:
+
+- Status.
+- Settings.
+- macOS permission state.
+- Custom dictionary later.
+- Account/sync later.
+
+The writing interaction itself should not require opening the panel. The panel is for control and configuration; the product experience happens inside the text field the user is already using.
+
 ## Why Electron
 
 Electron is acceptable for this project if the app is built with strict performance discipline.
@@ -311,13 +325,15 @@ The repo now contains a working Electron + TypeScript desktop scaffold.
 Implemented:
 
 - Electron main process.
+- macOS menu bar item.
 - Secure preload bridge.
 - Lightweight TypeScript renderer.
 - Local correction service.
-- Rule-based correction engine for the first app loop.
+- Rule-based correction engine for the first app loop, including a small common-misspelling layer.
 - macOS selected-text read/replace prototype using copy/paste automation.
 - Global prototype trigger.
 - Permission/status UI.
+- Settings and dictionary placeholders.
 
 Current in-app prototype:
 
@@ -332,6 +348,17 @@ Alt+Tab
 ```
 
 The final product should support bare `Tab`, but that should be handled by a native macOS event tap/helper instead of Electron's global shortcut API. The prototype trigger exists so the correction loop can be tested immediately without pretending the hard part is solved.
+
+The cross-app product target is:
+
+1. User types in any editable field.
+2. Native helper detects a pause and reads the current sentence around the caret.
+3. Correction engine prepares a fix.
+4. A tiny overlay appears near the caret or text field with `Tab`.
+5. Native helper intercepts `Tab` only while the fix is available.
+6. Native helper replaces the sentence in place.
+
+Electron should own the menu bar panel, settings, dictionary UI, account UI, update flow, and cross-platform app shell. Native helpers should own OS-level text control.
 
 Current cross-app selected-text flow:
 

@@ -7,7 +7,7 @@ declare global {
   }
 }
 
-const sampleText = "i dont think this are right";
+const sampleText = "wow this seem grast";
 const idleDelayMs = 420;
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -61,6 +61,27 @@ app.innerHTML = `
         <p data-last-run-note>Pause after typing, then press Tab.</p>
       </div>
     </section>
+
+    <section class="panel-grid" aria-label="Menu bar panel">
+      <article>
+        <span class="label">Settings</span>
+        <h2>Correction trigger</h2>
+        <p>Show the Tab hint after a short pause, then apply the suggested fix when Tab is pressed.</p>
+        <button type="button" data-permission-action>Request macOS access</button>
+      </article>
+      <article>
+        <span class="label">Dictionary</span>
+        <h2>Custom words</h2>
+        <p>Names, products, slang, and words Tab Fix should leave alone will live here.</p>
+        <button type="button" disabled>Coming later</button>
+      </article>
+      <article>
+        <span class="label">Native helper</span>
+        <h2>Every app</h2>
+        <p>The real cross-app Tab experience needs a Swift helper for focused fields, caret bounds, and event taps.</p>
+        <button type="button" disabled>Next build step</button>
+      </article>
+    </section>
   </section>
 `;
 
@@ -74,6 +95,7 @@ const previewInput = app.querySelector<HTMLTextAreaElement>("#preview-input");
 const tabHint = app.querySelector<HTMLElement>("[data-tab-hint]");
 const suggestion = app.querySelector<HTMLElement>("[data-suggestion]");
 const suggestionText = app.querySelector<HTMLElement>("[data-suggestion-text]");
+const permissionButton = app.querySelector<HTMLButtonElement>("[data-permission-action]");
 
 function requireElement<T extends Element>(element: T | null, name: string): T {
   if (!element) {
@@ -93,7 +115,8 @@ const elements = {
   previewInput: requireElement(previewInput, "preview input"),
   tabHint: requireElement(tabHint, "tab hint"),
   suggestion: requireElement(suggestion, "suggestion"),
-  suggestionText: requireElement(suggestionText, "suggestion text")
+  suggestionText: requireElement(suggestionText, "suggestion text"),
+  permissionButton: requireElement(permissionButton, "permission button")
 };
 
 let pendingCorrection: CorrectionResult | null = null;
@@ -249,6 +272,10 @@ elements.previewInput.addEventListener("keydown", (event) => {
 
 elements.previewInput.addEventListener("blur", () => {
   window.clearTimeout(idleTimer);
+});
+
+elements.permissionButton.addEventListener("click", async () => {
+  renderPermission(await window.tabFix.requestAccessibilityPermission());
 });
 
 elements.previewInput.addEventListener("click", () => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, systemPreferences } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, systemPreferences, Tray } from "electron";
 import path from "node:path";
 import { CorrectionService } from "../correction/service";
 import { MacosTextController } from "./macosTextController";
@@ -9,7 +9,9 @@ const textController = new MacosTextController();
 const triggerAccelerator = process.platform === "darwin" ? "Alt+Tab" : "CommandOrControl+Alt+T";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let isFixing = false;
+let isQuitting = false;
 let lastRun: FixRunResult | undefined;
 
 function getPermissionState(prompt = false): PermissionState {
@@ -119,6 +121,12 @@ async function runSelectedTextFix(): Promise<FixRunResult> {
 }
 
 function createWindow(): void {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
   mainWindow = new BrowserWindow({
     width: 980,
     height: 680,
@@ -139,11 +147,58 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
+  mainWindow.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
   if (process.env.TAB_FIX_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.TAB_FIX_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+}
+
+function showPanel(): void {
+  createWindow();
+}
+
+function createTray(): void {
+  if (tray) {
+    return;
+  }
+
+  tray = new Tray(nativeImage.createEmpty());
+  tray.setTitle("Tab Fix");
+  tray.setToolTip("Tab Fix");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Open Tab Fix",
+        click: showPanel
+      },
+      {
+        label: "Fix Selected Text",
+        click: () => {
+          void runSelectedTextFix();
+        }
+      },
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        }
+      }
+    ])
+  );
+
+  tray.on("click", showPanel);
 }
 
 function registerHotkeys(): void {
@@ -174,15 +229,16 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.requestAccessibilityPermission, () => getPermissionState(true));
 }
 
+app.setName("Tab Fix");
+
 app.whenReady().then(() => {
   registerIpc();
+  createTray();
   createWindow();
   registerHotkeys();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showPanel();
   });
 });
 

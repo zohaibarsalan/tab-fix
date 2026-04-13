@@ -260,6 +260,38 @@ textarea:focus {
   font-size: 14px;
 }
 
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.panel-grid article {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.panel-grid h2 {
+  margin-bottom: 0;
+}
+
+.panel-grid p {
+  margin-bottom: 8px;
+}
+
+.panel-grid button {
+  align-self: end;
+  width: fit-content;
+}
+
 @keyframes hint-in {
   from {
     opacity: 0;
@@ -283,7 +315,8 @@ textarea:focus {
 
   .masthead,
   .composer,
-  .system-strip {
+  .system-strip,
+  .panel-grid {
     grid-template-columns: 1fr;
   }
 
