@@ -3,6 +3,7 @@ import path from "node:path";
 
 export default defineConfig({
   root: path.resolve(__dirname),
+  base: "./",
   build: {
     outDir: "../../dist/desktop/renderer",
     emptyOutDir: false,
@@ -20,4 +21,3 @@ export default defineConfig({
     strictPort: false
   }
 });
-

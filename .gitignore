@@ -5,6 +5,7 @@ dist/
 release/
 apps/desktop/assets/TabFix.iconset/
 apps/desktop/assets/tab-fix-logo.svg.png
+apps/desktop/assets/tab-fix-menubar.png
 native/macos/.build/
 .DS_Store
 *.log

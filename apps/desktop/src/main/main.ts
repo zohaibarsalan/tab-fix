@@ -16,6 +16,14 @@ const overlaySize = {
   height: 38
 };
 
+function resourcePath(...segments: string[]): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, ...segments);
+  }
+
+  return path.join(process.cwd(), ...segments);
+}
+
 function tabFixIcon(size: number): Electron.NativeImage {
   return nativeImage.createFromDataURL(
     "data:image/svg+xml;utf8," +
@@ -26,6 +34,16 @@ function tabFixIcon(size: number): Electron.NativeImage {
         </svg>
       `)
   );
+}
+
+function trayIcon(): Electron.NativeImage {
+  const icon = nativeImage.createFromPath(resourcePath("assets", "tab-fix-menubar.png"));
+
+  if (!icon.isEmpty()) {
+    return icon.resize({ width: 22, height: 22 });
+  }
+
+  return tabFixIcon(64).resize({ width: 22, height: 22 });
 }
 
 function rendererUrl(page: "app" | "overlay"): string {
@@ -152,8 +170,7 @@ function showInAppSwitcher(): void {
 }
 
 function setupTray(): void {
-  const trayIcon = tabFixIcon(64).resize({ width: 22, height: 22 });
-  tray = new Tray(trayIcon);
+  tray = new Tray(trayIcon());
   tray.setToolTip("Tab Fix");
 
   trayMenu = Menu.buildFromTemplate([

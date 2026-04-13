@@ -7,12 +7,13 @@
   "main": "dist/desktop/main/main.js",
   "scripts": {
     "clean": "rimraf dist",
+    "build:icons": "node scripts/generate-icons.mjs",
     "build:native": "swift build --package-path native/macos",
     "build:main": "tsc -p apps/desktop/tsconfig.main.json",
     "build:renderer": "vite build --config apps/desktop/vite.config.ts",
     "build": "npm run clean && npm run build:native && npm run build:main && npm run build:renderer",
-    "pack:mac": "npm run build && electron-builder --mac dir",
-    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "pack:mac": "npm run build:icons && npm run build && electron-builder --mac dir",
+    "dist:mac": "npm run build:icons && npm run build && electron-builder --mac dmg",
     "dev": "npm run build:native && node scripts/dev.mjs",
     "start": "npm run build && node scripts/run-electron.mjs",
     "typecheck": "tsc -p apps/desktop/tsconfig.renderer.json --noEmit && tsc -p apps/desktop/tsconfig.main.json --noEmit"
@@ -29,6 +30,10 @@
       {
         "from": "native/macos/.build/debug/TabFixNative",
         "to": "native/macos/TabFixNative"
+      },
+      {
+        "from": "apps/desktop/assets/tab-fix-menubar.png",
+        "to": "assets/tab-fix-menubar.png"
       }
     ],
     "mac": {
