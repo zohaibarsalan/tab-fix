@@ -274,11 +274,71 @@ packages/shared
   Shared types and utilities
 ```
 
+## Running Locally
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the desktop app in development:
+
+```bash
+npm run dev
+```
+
+Create a production build:
+
+```bash
+npm run build
+```
+
+Run typechecks:
+
+```bash
+npm run typecheck
+```
+
+## Current Prototype
+
+The repo now contains a working Electron + TypeScript desktop scaffold.
+
+Implemented:
+
+- Electron main process.
+- Secure preload bridge.
+- Lightweight TypeScript renderer.
+- Local correction service.
+- Rule-based correction engine for the first app loop.
+- macOS selected-text read/replace prototype using copy/paste automation.
+- Global prototype trigger.
+- Permission/status UI.
+
+Current trigger:
+
+```text
+Alt+Tab
+```
+
+The final product should support bare `Tab`, but that should be handled by a native macOS event tap/helper instead of Electron's global shortcut API. The prototype trigger exists so the correction loop can be tested immediately without pretending the hard part is solved.
+
+Current selected-text flow:
+
+1. User selects text in another app.
+2. User presses the prototype trigger.
+3. Tab Fix copies the selected text.
+4. Tab Fix runs the local correction engine.
+5. Tab Fix pastes the fixed text back.
+6. Tab Fix restores the previous clipboard text.
+
+This requires macOS Accessibility permission.
+
 ## Development Status
 
-This project is at the product and architecture definition stage.
+This project has moved from product definition to the first desktop prototype.
 
-Next step: build the smallest possible macOS proof of concept that fixes selected text in the currently focused text field when the user presses a trigger.
+Next step: replace the copy/paste prototype with a native macOS helper that can detect editable fields, read the current sentence when no text is selected, and safely support the real `Tab` interaction.
 
 ## Non-Goals For The First Version
 

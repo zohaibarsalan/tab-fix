@@ -1,0 +1,31 @@
+{
+  "name": "tab-fix",
+  "version": "0.1.0",
+  "description": "A fast desktop writing-assist app that fixes selected text in place.",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "clean": "rimraf dist",
+    "dev": "node scripts/dev.mjs",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run clean && npm run build:main && npm run build:renderer",
+    "start": "npm run build && node scripts/run-electron.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit"
+  },
+  "keywords": [
+    "electron",
+    "macos",
+    "writing",
+    "grammar"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "electron": "^35.1.5",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5"
+  }
+}
