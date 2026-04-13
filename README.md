@@ -1,8 +1,6 @@
 # Tab Fix
 
-Tab Fix is a native macOS writing-assist app that fixes grammar, spelling, punctuation, and sentence issues with one keypress.
-
-The target interaction:
+Tab Fix is a macOS writing-assist app built around one interaction:
 
 1. Type in any text field.
 2. Pause for a moment.
@@ -10,151 +8,149 @@ The target interaction:
 4. Press `Tab`.
 5. The sentence is fixed in place.
 
-The app now uses Swift and AppKit instead of Electron. That gives us the right foundation for the real macOS behavior: Accessibility APIs, keyboard event taps, caret bounds, focused text fields, and menu bar integration.
+The app is intentionally split into two parts:
+
+```text
+Electron app
+  Product shell, menu bar UI, settings, dictionary UI, onboarding, overlay rendering
+
+Swift native core
+  macOS Accessibility, focused text fields, caret bounds, Tab event tap, replacement
+```
+
+Electron gives us the visual quality and iteration speed we want. Swift gives us the macOS authority needed for the cross-app text interaction.
 
 ## Current Prototype
 
-The current app is a native Swift/AppKit prototype.
-
 Implemented:
 
-- macOS menu bar app.
-- Native settings/panel window.
-- Same visual theme as the earlier prototype.
-- Writing surface with pause detection.
-- Floating `Tab` hint inside the app.
-- Press `Tab` to apply the suggested fix.
-- Local correction engine.
+- Electron desktop shell.
+- macOS menu bar item.
+- Brutalist settings/panel UI.
+- Transparent always-on-top overlay window for the `Tab` bubble.
+- Secure preload bridge.
+- IPC boundary between Electron and the native layer.
+- Swift native command service.
+- Accessibility permission status/request hook.
 - System spellchecker-backed spelling suggestions.
-- Basic agreement fixes, including `this seem -> this seems`.
-- Basic punctuation fixes.
-- Accessibility permission request hook.
-- Placeholder sections for Settings, Dictionary, and Native Helper.
+- Basic grammar, punctuation, and agreement fixes.
+- Settings, Dictionary, and Native Helper placeholder sections.
 
-Example corrections:
+Not implemented yet:
+
+- Cross-app `Tab` interception.
+- Focused text field detection in other apps.
+- Caret-bound overlay positioning in other apps.
+- In-place replacement in other apps.
+
+Today, the panel demonstrates the interaction and talks to the Swift native core for permissions and corrections. Running inside Safari, Chrome, ChatGPT, Notes, Slack, etc. requires the next native-helper milestone below.
+
+Example:
 
 ```text
 i dont think this are right -> I don't think this is right.
 ```
 
-The spelling layer should not be a hardcoded typo table. The current prototype uses macOS spellchecker suggestions for obvious misspellings. Contextual vocabulary fixes like `grast -> great` need a stronger language model/provider because the system spellchecker may suggest other valid nearby words without understanding sentence meaning.
+The spelling layer is intentionally not a hardcoded typo table. It uses macOS spellchecker suggestions for obvious misspellings. Contextual vocabulary fixes like `grast -> great` need a stronger language model/provider because system spellcheck may suggest other valid nearby words without understanding sentence meaning.
 
 ## Running Locally
 
-Build:
+Install dependencies:
 
 ```bash
-swift build
+npm install
 ```
 
-Run:
+Run the app:
 
 ```bash
-swift run TabFix
+npm run dev
 ```
 
-The app runs as a menu bar app. Look for `Tab Fix` in the macOS menu bar. The panel also opens on launch during development.
+Build everything:
 
-## Product Shape
+```bash
+npm run build
+```
 
-Tab Fix should live in the macOS menu bar.
+Typecheck Electron code:
 
-Clicking the menu bar item opens the panel for:
+```bash
+npm run typecheck
+```
 
-- Status.
-- Settings.
-- macOS permission state.
-- Custom dictionary later.
-- Account/sync later.
+Build only the native core:
 
-The writing interaction itself should not require opening this panel. The panel is for control and configuration; the product experience happens inside the text field the user is already using.
+```bash
+npm run build:native
+```
 
-## Core Interaction
+Call the native core directly:
 
-The final product should work like this:
+```bash
+native/macos/.build/debug/TabFixNative status
+native/macos/.build/debug/TabFixNative correct "i dont think this are right"
+```
 
-1. Watch the active editable field after the user types.
-2. After a short pause, inspect the current sentence around the cursor.
-3. If a useful correction exists, show a small `Tab` hint near the caret or top edge of the writing box.
-4. If the user presses `Tab`, apply the correction in place.
-5. If text is selected, fix the selected text instead.
-6. If the current app cannot be controlled safely, do nothing.
-
-The app should avoid surprising the user. Pressing `Tab` should only rewrite text when Tab Fix is confident it is inside an editable field and a correction is currently available.
-
-## macOS Architecture
-
-Tab Fix is now Swift-first.
-
-Suggested process model:
+## Project Layout
 
 ```text
-Swift/AppKit app
-  - Menu bar lifecycle
-  - Settings panel
-  - Dictionary UI later
-  - Account/sync UI later
-  - Correction orchestration
+apps/desktop
+  Electron app shell
+  menu bar panel
+  transparent overlay renderer
+  IPC client for the Swift native core
 
-Native text controller
-  - Focused app detection
-  - Focused editable element detection
-  - Current sentence extraction
-  - Selected text extraction
-  - Caret bounds lookup
-  - In-place replacement
-
-Keyboard/event layer
-  - Detect Tab globally
-  - Intercept Tab only while a correction is available
-  - Avoid breaking normal Tab behavior
-
-Correction engine
-  - Fast spelling/grammar/punctuation pass
-  - User dictionary later
-  - Local cache later
-  - Optional model/API provider later
+native/macos
+  Swift command service
+  Accessibility permission checks
+  system spellchecker-backed correction
+  future focused-field/caret/event-tap implementation
 ```
 
-Expected macOS permissions:
+## Electron App
 
-- Accessibility permission to inspect and manipulate focused text fields.
-- Input Monitoring permission if the global event tap requires it.
+Electron owns the product experience:
 
-## Why Swift
+- Beautiful brutalist panel.
+- Menu bar app.
+- Onboarding and permission screens.
+- Settings.
+- Personal dictionary later.
+- Account/sync later.
+- Overlay rendering for the correction bubble.
+- IPC coordination with the native layer.
 
-Electron was useful for exploring the UI quickly, but the core Tab Fix interaction is OS-level. Swift/AppKit is the better base because the hard parts are native:
+Electron can render the small `Tab` bubble as a transparent, always-on-top, click-through window. It should not own the macOS text-control logic.
 
-- Global `Tab` handling.
+## Swift Native Core
+
+Swift owns the macOS integration layer:
+
+- Accessibility permission check.
 - Focused text field detection.
-- Caret position lookup.
-- Cross-app text extraction.
-- Cross-app replacement.
-- Menu bar app behavior.
-- Low idle CPU and memory.
+- Caret and text-range bounds.
+- Current word/sentence extraction.
+- AX observers where reliable.
+- Lightweight fallback polling where needed.
+- Key event tap for `Tab`.
+- In-place replacement.
+- Per-app fallback logic.
 
-The long-term app can still become cross-platform, but the macOS version should first be excellent and native.
+The current Swift service is command-based. It is enough for permission checks and correction calls. The next version should become a long-running native helper so Electron can receive events like focused-field changes, caret movement, and correction availability without spawning a process per request.
 
-## Performance Requirements
+## Target Runtime Flow
 
-Tab Fix should be designed around latency from day one.
-
-Target behavior:
-
-- Idle CPU should be near zero.
-- The panel should open immediately.
-- Typing should never lag.
-- The `Tab` hint should appear shortly after a pause.
-- Applying a correction should feel instant.
-
-Engineering rules:
-
-- Do not poll aggressively.
-- Prefer event-driven macOS APIs.
-- Read the smallest useful text range.
-- Do not send whole documents for sentence fixes.
-- Cache repeat corrections where safe.
-- Measure correction latency before adding heavier features.
+```text
+User types in any app
+  -> Swift detects focused editable field and current sentence
+  -> Swift sends text + caret bounds to Electron
+  -> Electron runs correction provider
+  -> Electron shows the Tab overlay near the caret
+  -> Swift intercepts Tab only while the overlay is active
+  -> Swift replaces the text in place
+  -> Electron hides overlay and updates status
+```
 
 ## Correction Behavior
 
@@ -209,28 +205,6 @@ Paid version:
 - Account-based backup and restore.
 - Future advanced writing features.
 
-## Free And Paid Direction
-
-The free version should be useful on its own. The paid version should add convenience and power without making the base product feel broken.
-
-Possible free features:
-
-- Local correction.
-- Local dictionary.
-- Basic settings.
-- One-device usage.
-
-Possible paid features:
-
-- Dictionary sync.
-- Multi-device settings sync.
-- Team or work vocabulary later.
-- Advanced rewrite modes.
-- Custom tone presets.
-- Higher usage limits if using a cloud correction backend.
-
-Billing should not be part of the first milestone.
-
 ## Privacy Principles
 
 Tab Fix will touch sensitive text, so privacy needs to be part of the product design.
@@ -251,15 +225,16 @@ The next milestone is the real cross-app native helper.
 
 Build in this order:
 
-1. Detect the focused app and focused accessibility element.
-2. Confirm whether the focused element is editable.
-3. Read selected text from common apps.
-4. Read the current sentence around the caret when no text is selected.
-5. Get caret bounds and position the `Tab` overlay near the cursor.
-6. Add a global event tap for `Tab`.
-7. Intercept `Tab` only while a correction is visible.
-8. Replace the sentence in place.
-9. Test Safari, Chrome, Arc, Notes, Messages, Slack, Discord, VS Code, Apple Mail, and ChatGPT.
+1. Convert the Swift command service into a long-running helper process.
+2. Add focused app and focused accessibility element detection.
+3. Confirm whether the focused element is editable.
+4. Read selected text from common apps.
+5. Read the current sentence around the caret when no text is selected.
+6. Get caret bounds and position the Electron overlay near the cursor.
+7. Add a global event tap for `Tab`.
+8. Intercept `Tab` only while a correction is visible.
+9. Replace the sentence in place.
+10. Test Safari, Chrome, Arc, Notes, Messages, Slack, Discord, VS Code, Apple Mail, and ChatGPT.
 
 ## Non-Goals For The First Version
 

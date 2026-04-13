@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-  name: "TabFix",
+  name: "TabFixNative",
   platforms: [
     .macOS(.v14)
   ],
   products: [
-    .executable(name: "TabFix", targets: ["TabFix"])
+    .executable(name: "TabFixNative", targets: ["TabFixNative"])
   ],
   targets: [
     .executableTarget(
-      name: "TabFix",
-      path: "Sources/TabFix"
+      name: "TabFixNative",
+      path: "Sources/TabFixNative"
     )
   ]
 )

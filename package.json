@@ -1,0 +1,25 @@
+{
+  "name": "tab-fix",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tab-to-fix writing assistant for macOS.",
+  "main": "dist/desktop/main/main.js",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build:native": "swift build --package-path native/macos",
+    "build:main": "tsc -p apps/desktop/tsconfig.main.json",
+    "build:renderer": "vite build --config apps/desktop/vite.config.ts",
+    "build": "npm run clean && npm run build:native && npm run build:main && npm run build:renderer",
+    "dev": "npm run build:native && node scripts/dev.mjs",
+    "start": "npm run build && node scripts/run-electron.mjs",
+    "typecheck": "tsc -p apps/desktop/tsconfig.renderer.json --noEmit && tsc -p apps/desktop/tsconfig.main.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "electron": "^35.7.5",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5"
+  }
+}
+

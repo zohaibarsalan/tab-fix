@@ -2,6 +2,7 @@
 DerivedData/
 node_modules/
 dist/
+native/macos/.build/
 .DS_Store
 *.log
 .env

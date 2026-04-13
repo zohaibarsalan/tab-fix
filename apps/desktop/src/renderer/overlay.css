@@ -1,0 +1,41 @@
+html,
+body,
+#overlay {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family:
+    Avenir Next,
+    Avenir,
+    Gill Sans,
+    Trebuchet MS,
+    sans-serif;
+}
+
+.bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px;
+  border: 1px solid #101111;
+  border-radius: 8px;
+  background: #fffdf9;
+  color: #101111;
+  padding: 8px 12px;
+  box-shadow: 6px 6px 0 rgba(16, 17, 17, 0.18);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+kbd {
+  min-width: 48px;
+  border-radius: 6px;
+  background: #d83b2d;
+  color: #fffdf9;
+  padding: 7px 9px;
+  text-align: center;
+  font: inherit;
+}
+
