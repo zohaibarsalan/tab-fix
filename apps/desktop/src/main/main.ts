@@ -16,6 +16,18 @@ const overlaySize = {
   height: 38
 };
 
+function tabFixIcon(size: number): Electron.NativeImage {
+  return nativeImage.createFromDataURL(
+    "data:image/svg+xml;utf8," +
+      encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <rect x="${size * 0.104}" y="${size * 0.104}" width="${size * 0.792}" height="${size * 0.792}" rx="${size * 0.125}" fill="#df372d"/>
+          <path d="M${size * 0.313} ${size * 0.292}h${size * 0.375}v${size * 0.125}h-${size * 0.125}v${size * 0.313}h-${size * 0.125}v-${size * 0.313}h-${size * 0.125}z" fill="#fffdf9"/>
+        </svg>
+      `)
+  );
+}
+
 function rendererUrl(page: "app" | "overlay"): string {
   const devServer = process.env.TAB_FIX_DEV_SERVER_URL;
 
@@ -38,6 +50,7 @@ function createPanelWindow(): BrowserWindow {
     minWidth: 920,
     minHeight: 640,
     title: "Tab Fix",
+    icon: tabFixIcon(256),
     titleBarStyle: "hiddenInset",
     backgroundColor: "#f7f7f2",
     show: false,
@@ -57,6 +70,7 @@ function createPanelWindow(): BrowserWindow {
 
     event.preventDefault();
     panelWindow?.hide();
+    hideFromAppSwitcher();
   });
   panelWindow.on("closed", () => {
     panelWindow = null;
@@ -113,24 +127,33 @@ function createOverlayWindow(): BrowserWindow {
 }
 
 function showPanel(): void {
+  showInAppSwitcher();
   const window = createPanelWindow();
   window.show();
   window.focus();
 }
 
+function hideFromAppSwitcher(): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  app.setActivationPolicy("accessory");
+  app.dock?.hide();
+}
+
+function showInAppSwitcher(): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  app.setActivationPolicy("regular");
+  app.dock?.show();
+}
+
 function setupTray(): void {
-  const icon = nativeImage.createFromDataURL(
-    "data:image/svg+xml;utf8," +
-      encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-          <rect x="5" y="5" width="22" height="22" rx="6" fill="#dc3b2f"/>
-          <path d="M9 10h14v4h-5v10h-4V14H9z" fill="white"/>
-        </svg>
-      `)
-  );
-  const trayIcon = icon.resize({ width: 18, height: 18 });
+  const trayIcon = tabFixIcon(64).resize({ width: 22, height: 22 });
   tray = new Tray(trayIcon);
-  tray.setTitle("T");
   tray.setToolTip("Tab Fix");
 
   trayMenu = Menu.buildFromTemplate([
@@ -246,6 +269,7 @@ function setupIpc(): void {
 app.setName("Tab Fix");
 
 app.whenReady().then(() => {
+  app.dock?.setIcon(tabFixIcon(256));
   setupIpc();
   setupApplicationMenu();
   setupTray();
