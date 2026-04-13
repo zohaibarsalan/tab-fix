@@ -31,19 +31,24 @@ Implemented:
 - Secure preload bridge.
 - IPC boundary between Electron and the native layer.
 - Swift native command service.
+- Swift long-running helper service.
 - Accessibility permission status/request hook.
+- Cross-app focused text inspection MVP.
+- Cross-app `Tab` event tap MVP.
+- Cross-app AX replacement with paste fallback.
 - System spellchecker-backed spelling suggestions.
 - Basic grammar, punctuation, and agreement fixes.
 - Settings, Dictionary, and Native Helper placeholder sections.
 
-Not implemented yet:
+Current cross-app support is an MVP. It starts a long-running Swift helper, watches typing globally, inspects the focused accessibility element after a short pause, asks Electron to show the overlay, intercepts `Tab` while a candidate is active, and attempts replacement.
 
-- Cross-app `Tab` interception.
-- Focused text field detection in other apps.
-- Caret-bound overlay positioning in other apps.
-- In-place replacement in other apps.
+Expected limitations:
 
-Today, the panel demonstrates the interaction and talks to the Swift native core for permissions and corrections. Running inside Safari, Chrome, ChatGPT, Notes, Slack, etc. requires the next native-helper milestone below.
+- Some apps expose text through Accessibility cleanly.
+- Some browser/editor surfaces expose partial text or no writable AX value.
+- Some apps will require per-app fallback behavior.
+- The paste fallback briefly uses the clipboard, then restores it.
+- Accessibility permission must be granted, and the app should be restarted after granting it.
 
 Example:
 
@@ -66,6 +71,8 @@ Run the app:
 ```bash
 npm run dev
 ```
+
+For cross-app testing, click `Request macOS access`. The app opens macOS Accessibility settings. In development, macOS may list `Electron`, `TabFixNative`, or the terminal/dev tool that launched the helper. Enable the relevant entries, then quit and rerun `npm run dev`.
 
 Build everything:
 
@@ -137,7 +144,7 @@ Swift owns the macOS integration layer:
 - In-place replacement.
 - Per-app fallback logic.
 
-The current Swift service is command-based. It is enough for permission checks and correction calls. The next version should become a long-running native helper so Electron can receive events like focused-field changes, caret movement, and correction availability without spawning a process per request.
+The Swift service supports both one-shot commands and a long-running `serve` mode. Electron starts `serve` on launch and listens for JSON-line events from the native helper.
 
 ## Target Runtime Flow
 
@@ -221,20 +228,16 @@ Principles:
 
 ## Next Build Step
 
-The next milestone is the real cross-app native helper.
+The next milestone is hardening the cross-app native helper across real apps.
 
 Build in this order:
 
-1. Convert the Swift command service into a long-running helper process.
-2. Add focused app and focused accessibility element detection.
-3. Confirm whether the focused element is editable.
-4. Read selected text from common apps.
-5. Read the current sentence around the caret when no text is selected.
-6. Get caret bounds and position the Electron overlay near the cursor.
-7. Add a global event tap for `Tab`.
-8. Intercept `Tab` only while a correction is visible.
-9. Replace the sentence in place.
-10. Test Safari, Chrome, Arc, Notes, Messages, Slack, Discord, VS Code, Apple Mail, and ChatGPT.
+1. Add structured diagnostics for focused app, role, AX attributes, and replacement strategy.
+2. Improve editable-element detection so buttons/forms/tables are ignored.
+3. Improve caret coordinate conversion across multiple displays.
+4. Add per-app fallbacks for Safari, Chrome, Arc, Notes, Messages, Slack, Discord, VS Code, Apple Mail, and ChatGPT.
+5. Move correction requests from Swift-only to Electron/provider orchestration for future model support.
+6. Add settings for excluded apps and trigger behavior.
 
 ## Non-Goals For The First Version
 

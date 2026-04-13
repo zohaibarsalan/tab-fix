@@ -74,9 +74,12 @@ enum NativeCommand {
       capabilities: [
         "accessibility-permission",
         "system-spellchecker",
-        "focused-field-detection-next",
-        "caret-bounds-next",
-        "tab-event-tap-next"
+        "focused-field-detection",
+        "current-sentence-extraction",
+        "caret-bounds",
+        "tab-event-tap",
+        "ax-replacement",
+        "paste-fallback"
       ]
     )
   }
@@ -394,12 +397,10 @@ final class CrossAppService {
 
   private func scheduleInspection() {
     debounceTimer?.invalidate()
-    debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
-      self?.inspectFocusedText()
-    }
+    debounceTimer = Timer.scheduledTimer(timeInterval: 0.45, target: self, selector: #selector(inspectFocusedText), userInfo: nil, repeats: false)
   }
 
-  private func inspectFocusedText() {
+  @objc private func inspectFocusedText() {
     guard !isFrontmostAppTabFix(),
           let element = focusedElement(),
           let fullText = stringAttribute(element, kAXValueAttribute as String),

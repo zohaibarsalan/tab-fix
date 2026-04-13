@@ -1,7 +1,9 @@
 export type PermissionState = {
   accessibility: boolean;
+  electronAccessibility?: boolean;
   inputMonitoring: boolean;
   note: string;
+  helperPath?: string;
 };
 
 export type CorrectionResult = {

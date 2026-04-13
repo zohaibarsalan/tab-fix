@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, systemPreferences, Tray } from "electron";
 import path from "node:path";
-import { NativeCoreClient } from "./nativeCoreClient";
+import { NativeCoreClient, nativeBinaryPath } from "./nativeCoreClient";
 import { ipcChannels, type NativeHelperEvent, type OverlayPayload } from "../shared/ipc";
 
 const nativeCore = new NativeCoreClient();
@@ -124,7 +124,7 @@ function setupTray(): void {
     {
       label: "Request Permissions",
       click: () => {
-        void nativeCore.requestPermissions();
+        void requestNativePermissions();
       }
     },
     { type: "separator" },
@@ -133,6 +133,27 @@ function setupTray(): void {
 
   tray.setContextMenu(trayMenu);
   tray.on("click", showPanel);
+}
+
+async function requestNativePermissions() {
+  const electronAccessibility = process.platform === "darwin"
+    ? systemPreferences.isTrustedAccessibilityClient(true)
+    : false;
+  const permissions = await nativeCore.requestPermissions();
+  await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+  shell.showItemInFolder(nativeBinaryPath());
+
+  nativeCore.stopHelper();
+  setTimeout(() => nativeCore.startHelper(), 500);
+
+  return {
+    ...permissions,
+    electronAccessibility,
+    helperPath: nativeBinaryPath(),
+    note: permissions.accessibility
+      ? permissions.note
+      : `Add Electron and the native helper manually if they do not appear. Helper: ${nativeBinaryPath()}`
+  };
 }
 
 function handleNativeEvent(event: NativeHelperEvent): void {
@@ -176,7 +197,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle(ipcChannels.correct, async (_event, text: string) => nativeCore.correct(text));
-  ipcMain.handle(ipcChannels.requestPermissions, async () => nativeCore.requestPermissions());
+  ipcMain.handle(ipcChannels.requestPermissions, async () => requestNativePermissions());
 
   ipcMain.handle(ipcChannels.showOverlay, (_event, payload: OverlayPayload) => {
     showOverlay(payload);

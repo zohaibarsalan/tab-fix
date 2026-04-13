@@ -190,10 +190,21 @@ input.addEventListener("blur", () => {
 });
 
 permissionsButton.addEventListener("click", async () => {
-  const permissions = await window.tabFix.requestPermissions();
-  permission.textContent = permissions.accessibility ? "Ready" : "Needs access";
-  permission.dataset.state = permissions.accessibility ? "ready" : "blocked";
-  permissionNote.textContent = permissions.note;
+  permissionsButton.disabled = true;
+  permissionsButton.textContent = "Opening Settings...";
+  permissionNote.textContent = "Enable Electron and TabFixNative if they appear, then quit and rerun Tab Fix.";
+
+  try {
+    const permissions = await window.tabFix.requestPermissions();
+    permission.textContent = permissions.accessibility ? "Ready" : "Needs access";
+    permission.dataset.state = permissions.accessibility ? "ready" : "blocked";
+    permissionNote.textContent = permissions.accessibility
+      ? permissions.note
+      : `Use + if needed and add the helper manually: ${permissions.helperPath ?? "native/macos/.build/debug/TabFixNative"}`;
+  } finally {
+    permissionsButton.disabled = false;
+    permissionsButton.textContent = "Request macOS access";
+  }
 });
 
 window.addEventListener("resize", () => {

@@ -10,7 +10,7 @@ function repoRoot(): string {
   return process.cwd();
 }
 
-function nativeBinaryPath(): string {
+export function nativeBinaryPath(): string {
   return path.join(repoRoot(), "native/macos/.build/debug/TabFixNative");
 }
 
