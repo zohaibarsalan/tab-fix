@@ -5,8 +5,10 @@ Tab Fix is a fast, lightweight writing-assist app that fixes grammar, spelling, 
 The core interaction is simple:
 
 1. Type anywhere on your computer.
-2. Press `Tab`.
-3. The sentence or selected text is fixed instantly in place.
+2. Pause for a moment.
+3. A small `Tab` hint appears near the cursor or text field.
+4. Press `Tab`.
+5. The sentence is fixed instantly in place.
 
 The first version is focused on macOS. The long-term direction is a cross-platform desktop app.
 
@@ -51,10 +53,12 @@ The MVP is:
 
 Tab Fix should use this priority order:
 
-1. If text is selected, fix the selected text.
-2. If no text is selected, fix the current sentence around the cursor.
-3. If sentence detection fails, fix the current paragraph or nearby text window.
-4. If the current app cannot be controlled safely, do nothing and optionally show a subtle failure state.
+1. Watch the active editable field after the user types.
+2. After a short pause, inspect the current sentence around the cursor.
+3. If a useful correction exists, show a small `Tab` hint near the cursor or top edge of the writing box.
+4. If the user presses `Tab`, apply the correction in place.
+5. If text is selected, fix the selected text instead.
+6. If the current app cannot be controlled safely, do nothing and optionally show a subtle failure state.
 
 The app should avoid surprising the user. Pressing `Tab` should only rewrite text when Tab Fix is confident it is inside an editable field.
 
@@ -315,7 +319,13 @@ Implemented:
 - Global prototype trigger.
 - Permission/status UI.
 
-Current trigger:
+Current in-app prototype:
+
+```text
+Type -> pause -> Tab hint appears -> press Tab -> sentence is fixed
+```
+
+Current cross-app trigger:
 
 ```text
 Alt+Tab
@@ -323,7 +333,7 @@ Alt+Tab
 
 The final product should support bare `Tab`, but that should be handled by a native macOS event tap/helper instead of Electron's global shortcut API. The prototype trigger exists so the correction loop can be tested immediately without pretending the hard part is solved.
 
-Current selected-text flow:
+Current cross-app selected-text flow:
 
 1. User selects text in another app.
 2. User presses the prototype trigger.

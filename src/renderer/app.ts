@@ -8,6 +8,7 @@ declare global {
 }
 
 const sampleText = "i dont think this are right";
+const idleDelayMs = 420;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -19,8 +20,8 @@ app.innerHTML = `
   <section class="shell">
     <header class="masthead">
       <div>
-        <p class="eyebrow">macOS prototype</p>
-        <h1>Fix the sentence where it lives.</h1>
+        <p class="eyebrow">Tab Fix</p>
+        <h1>Type. Pause. Tab.</h1>
       </div>
       <div class="wordmark" aria-label="Tab Fix logo">
         <span>Tab</span>
@@ -28,42 +29,36 @@ app.innerHTML = `
       </div>
     </header>
 
-    <section class="status-grid" aria-label="Application status">
-      <article class="status-panel">
-        <span class="label">Trigger</span>
-        <strong data-trigger>Loading</strong>
-        <p data-trigger-note>Checking hotkey state.</p>
-      </article>
-      <article class="status-panel">
-        <span class="label">Permission</span>
-        <strong data-permission>Loading</strong>
-        <p data-permission-note>Checking macOS access.</p>
-      </article>
-      <article class="status-panel">
-        <span class="label">Last run</span>
-        <strong data-last-run>None yet</strong>
-        <p data-last-run-note>Select text in another app, then use the prototype trigger.</p>
-      </article>
+    <section class="composer" aria-label="Inline correction demo">
+      <div class="field-wrap">
+        <label for="preview-input">Write here</label>
+        <textarea id="preview-input" spellcheck="false" autocomplete="off">${sampleText}</textarea>
+        <div class="tab-hint" data-tab-hint hidden>
+          <kbd>Tab</kbd>
+          <span>Fix sentence</span>
+        </div>
+      </div>
+      <div class="suggestion" data-suggestion hidden aria-live="polite">
+        <span class="label">Suggested fix</span>
+        <strong data-suggestion-text></strong>
+      </div>
     </section>
 
-    <section class="workbench">
-      <div class="copy">
-        <p class="eyebrow">local engine</p>
-        <h2>Correction pipeline</h2>
-        <p>
-          The first build uses a tiny local rule engine so the app loop is real before a model backend is added.
-        </p>
+    <section class="system-strip" aria-label="Prototype status">
+      <div>
+        <span class="label">macOS access</span>
+        <strong data-permission>Loading</strong>
+        <p data-permission-note>Checking macOS access.</p>
       </div>
-
-      <div class="tester" aria-label="Correction preview">
-        <label for="preview-input">Preview text</label>
-        <textarea id="preview-input" spellcheck="false">${sampleText}</textarea>
-        <div class="actions">
-          <button type="button" data-preview>Preview fix</button>
-          <button type="button" data-run-selected>Fix selected text now</button>
-          <button type="button" class="secondary" data-permission-action>Grant macOS access</button>
-        </div>
-        <output data-preview-output aria-live="polite"></output>
+      <div>
+        <span class="label">Cross-app trigger</span>
+        <strong data-trigger>Loading</strong>
+        <p data-trigger-note>Checking hotkey state.</p>
+      </div>
+      <div>
+        <span class="label">Last fix</span>
+        <strong data-last-run>None yet</strong>
+        <p data-last-run-note>Pause after typing, then press Tab.</p>
       </div>
     </section>
   </section>
@@ -76,10 +71,9 @@ const permissionNote = app.querySelector<HTMLElement>("[data-permission-note]");
 const lastRun = app.querySelector<HTMLElement>("[data-last-run]");
 const lastRunNote = app.querySelector<HTMLElement>("[data-last-run-note]");
 const previewInput = app.querySelector<HTMLTextAreaElement>("#preview-input");
-const previewButton = app.querySelector<HTMLButtonElement>("[data-preview]");
-const runSelectedButton = app.querySelector<HTMLButtonElement>("[data-run-selected]");
-const permissionButton = app.querySelector<HTMLButtonElement>("[data-permission-action]");
-const previewOutput = app.querySelector<HTMLOutputElement>("[data-preview-output]");
+const tabHint = app.querySelector<HTMLElement>("[data-tab-hint]");
+const suggestion = app.querySelector<HTMLElement>("[data-suggestion]");
+const suggestionText = app.querySelector<HTMLElement>("[data-suggestion-text]");
 
 function requireElement<T extends Element>(element: T | null, name: string): T {
   if (!element) {
@@ -97,11 +91,14 @@ const elements = {
   lastRun: requireElement(lastRun, "last run"),
   lastRunNote: requireElement(lastRunNote, "last run note"),
   previewInput: requireElement(previewInput, "preview input"),
-  previewButton: requireElement(previewButton, "preview button"),
-  runSelectedButton: requireElement(runSelectedButton, "run selected button"),
-  permissionButton: requireElement(permissionButton, "permission button"),
-  previewOutput: requireElement(previewOutput, "preview output")
+  tabHint: requireElement(tabHint, "tab hint"),
+  suggestion: requireElement(suggestion, "suggestion"),
+  suggestionText: requireElement(suggestionText, "suggestion text")
 };
+
+let pendingCorrection: CorrectionResult | null = null;
+let idleTimer: number | undefined;
+let correctionRequestId = 0;
 
 function renderPermission(state: PermissionState): void {
   elements.permission.textContent = state.accessibility === "granted" ? "Ready" : "Needs access";
@@ -127,44 +124,145 @@ function renderState(state: AppState): void {
   elements.trigger.dataset.state = state.isFixing ? "busy" : "ready";
   elements.triggerNote.textContent =
     state.tabTriggerStatus === "prototype-trigger"
-      ? "Prototype trigger. Bare Tab needs the native event tap helper."
+      ? `${state.triggerAccelerator} fixes selected text outside this window. Bare Tab needs the native helper.`
       : "Native Tab trigger is available.";
 
   renderPermission(state.permissionState);
   renderRun(state.lastRun);
-
-  elements.runSelectedButton.disabled = state.isFixing;
-  elements.runSelectedButton.textContent = state.isFixing ? "Fixing..." : "Fix selected text now";
 }
 
-function renderCorrection(result: CorrectionResult): void {
-  const fixes = result.fixes.length > 0 ? result.fixes.join(", ") : "No changes needed";
+function setInlineSuggestion(result: CorrectionResult | null): void {
+  pendingCorrection = result?.changed ? result : null;
 
-  elements.previewOutput.innerHTML = `
-    <span>${fixes}</span>
-    <strong>${result.output}</strong>
-    <small>${result.durationMs}ms local pass</small>
-  `;
+  if (!pendingCorrection) {
+    elements.tabHint.hidden = true;
+    elements.suggestion.hidden = true;
+    return;
+  }
+
+  elements.tabHint.hidden = false;
+  elements.suggestion.hidden = false;
+  elements.suggestionText.textContent = pendingCorrection.output;
+  positionHintNearCaret();
+}
+
+function positionHintNearCaret(): void {
+  const textarea = elements.previewInput;
+  const wrapRect = textarea.parentElement?.getBoundingClientRect();
+
+  if (!wrapRect) {
+    return;
+  }
+
+  const textareaRect = textarea.getBoundingClientRect();
+  const styles = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  const marker = document.createElement("span");
+  const selectionStart = textarea.selectionStart;
+
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.boxSizing = "border-box";
+  mirror.style.width = `${textareaRect.width}px`;
+  mirror.style.minHeight = `${textareaRect.height}px`;
+  mirror.style.padding = styles.padding;
+  mirror.style.border = styles.border;
+  mirror.style.font = styles.font;
+  mirror.style.lineHeight = styles.lineHeight;
+  mirror.style.letterSpacing = styles.letterSpacing;
+  mirror.style.left = `${textareaRect.left}px`;
+  mirror.style.top = `${textareaRect.top}px`;
+
+  mirror.textContent = textarea.value.slice(0, selectionStart);
+  marker.textContent = "\u200b";
+  mirror.append(marker);
+  document.body.append(mirror);
+
+  const markerRect = marker.getBoundingClientRect();
+  const hintRect = elements.tabHint.getBoundingClientRect();
+  const left = markerRect.left - wrapRect.left;
+  const top = markerRect.top - wrapRect.top - hintRect.height - 10 - textarea.scrollTop;
+  const maxLeft = Math.max(12, textareaRect.width - hintRect.width - 18);
+
+  elements.tabHint.style.left = `${Math.min(Math.max(left, 14), maxLeft)}px`;
+  elements.tabHint.style.top = `${Math.max(top, 42)}px`;
+  mirror.remove();
+}
+
+async function queueInlineCorrection(): Promise<void> {
+  window.clearTimeout(idleTimer);
+  setInlineSuggestion(null);
+
+  const text = elements.previewInput.value;
+  const requestId = correctionRequestId + 1;
+  correctionRequestId = requestId;
+
+  if (text.trim().length < 3) {
+    return;
+  }
+
+  idleTimer = window.setTimeout(() => {
+    void (async () => {
+      const result = await window.tabFix.previewCorrection(text);
+
+      if (requestId !== correctionRequestId || elements.previewInput.value !== text) {
+        return;
+      }
+
+      setInlineSuggestion(result);
+    })();
+  }, idleDelayMs);
+}
+
+function applyInlineCorrection(): void {
+  if (!pendingCorrection) {
+    return;
+  }
+
+  elements.previewInput.value = pendingCorrection.output;
+  elements.lastRun.textContent = `${pendingCorrection.durationMs}ms`;
+  elements.lastRun.dataset.state = "ready";
+  elements.lastRunNote.textContent =
+    pendingCorrection.fixes.length > 0 ? pendingCorrection.fixes.join(", ") : "Text replaced.";
+  setInlineSuggestion(null);
+  correctionRequestId += 1;
 }
 
 async function refreshState(): Promise<void> {
   renderState(await window.tabFix.getState());
 }
 
-elements.previewButton.addEventListener("click", async () => {
-  const result = await window.tabFix.previewCorrection(elements.previewInput.value);
-  renderCorrection(result);
+elements.previewInput.addEventListener("input", () => {
+  void queueInlineCorrection();
 });
 
-elements.runSelectedButton.addEventListener("click", async () => {
-  const result = await window.tabFix.runSelectedTextFix();
-  renderRun(result);
-  await refreshState();
+elements.previewInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || !pendingCorrection) {
+    return;
+  }
+
+  event.preventDefault();
+  applyInlineCorrection();
 });
 
-elements.permissionButton.addEventListener("click", async () => {
-  renderPermission(await window.tabFix.requestAccessibilityPermission());
+elements.previewInput.addEventListener("blur", () => {
+  window.clearTimeout(idleTimer);
+});
+
+elements.previewInput.addEventListener("click", () => {
+  if (pendingCorrection) {
+    positionHintNearCaret();
+  }
+});
+
+elements.previewInput.addEventListener("keyup", () => {
+  if (pendingCorrection) {
+    positionHintNearCaret();
+  }
 });
 
 window.tabFix.onStateChange(renderState);
 void refreshState();
+void queueInlineCorrection();

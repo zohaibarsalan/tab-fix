@@ -70,7 +70,7 @@ button.secondary {
 .shell {
   width: min(100%, 1120px);
   margin: 0 auto;
-  padding: 44px;
+  padding: 34px 44px 44px;
 }
 
 .masthead {
@@ -78,8 +78,7 @@ button.secondary {
   grid-template-columns: 1fr auto;
   gap: 32px;
   align-items: start;
-  padding-bottom: 34px;
-  border-bottom: 2px solid var(--ink);
+  padding-bottom: 24px;
 }
 
 .eyebrow,
@@ -149,64 +148,24 @@ kbd {
   font: inherit;
 }
 
-.status-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin: 24px 0 34px;
-}
-
-.status-panel,
-.tester {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: var(--shadow);
-}
-
-.status-panel {
-  min-height: 150px;
-  padding: 18px;
-}
-
-.status-panel strong {
-  display: block;
-  min-height: 32px;
-  color: var(--ink);
-  font-size: 26px;
-  line-height: 1.1;
-}
-
-.status-panel strong[data-state="ready"] {
+.system-strip strong[data-state="ready"] {
   color: var(--mint);
 }
 
-.status-panel strong[data-state="blocked"] {
+.system-strip strong[data-state="blocked"] {
   color: var(--signal);
 }
 
-.status-panel strong[data-state="busy"] {
+.system-strip strong[data-state="busy"] {
   color: var(--ink);
 }
 
-.status-panel p {
-  margin: 12px 0 0;
-  font-size: 14px;
-}
-
-.workbench {
+.composer {
   display: grid;
-  grid-template-columns: 0.72fr 1.28fr;
-  gap: 28px;
-  align-items: start;
-}
-
-.copy {
-  padding-top: 10px;
-}
-
-.tester {
-  padding: 18px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: stretch;
+  margin-top: 18px;
 }
 
 label {
@@ -215,10 +174,14 @@ label {
   font-weight: 800;
 }
 
+.field-wrap {
+  position: relative;
+}
+
 textarea {
   display: block;
   width: 100%;
-  min-height: 150px;
+  min-height: 310px;
   resize: vertical;
   border: 2px solid var(--ink);
   border-radius: 6px;
@@ -227,40 +190,86 @@ textarea {
   padding: 14px;
   line-height: 1.5;
   outline: none;
+  font-size: 30px;
 }
 
 textarea:focus {
   box-shadow: 0 0 0 3px rgba(216, 59, 45, 0.18);
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
+.tab-hint {
+  position: absolute;
+  left: 18px;
+  top: 42px;
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
-  margin: 14px 0;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: #fffdf9;
+  color: var(--ink);
+  padding: 8px 10px;
+  box-shadow: 6px 6px 0 rgba(16, 17, 17, 0.18);
+  font-weight: 800;
+  animation: hint-in 140ms ease-out;
 }
 
-output {
+.tab-hint[hidden],
+.suggestion[hidden] {
+  display: none;
+}
+
+.tab-hint kbd {
+  min-width: 48px;
+  padding: 6px 8px;
+}
+
+.suggestion {
   display: grid;
-  gap: 8px;
-  min-height: 96px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
+  align-content: start;
+  gap: 14px;
+  min-height: 310px;
+  border-left: 3px solid var(--signal);
+  padding: 12px 0 0 18px;
 }
 
-output:empty::before {
-  content: "Preview output lands here.";
-  color: var(--muted);
-}
-
-output span,
-output small {
-  color: var(--muted);
-}
-
-output strong {
+.suggestion strong {
   font-size: 24px;
   line-height: 1.25;
+}
+
+.system-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+  border-top: 2px solid var(--ink);
+  padding-top: 18px;
+}
+
+.system-strip strong {
+  display: block;
+  min-height: 28px;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.system-strip p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 820px) {
@@ -273,13 +282,24 @@ output strong {
   }
 
   .masthead,
-  .status-grid,
-  .workbench {
+  .composer,
+  .system-strip {
     grid-template-columns: 1fr;
   }
 
   h1 {
     font-size: 42px;
   }
-}
 
+  textarea {
+    min-height: 260px;
+    font-size: 22px;
+  }
+
+  .suggestion {
+    min-height: 0;
+    border-left: 0;
+    border-top: 3px solid var(--signal);
+    padding: 16px 0 0;
+  }
+}
