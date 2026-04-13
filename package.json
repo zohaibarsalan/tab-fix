@@ -2,6 +2,7 @@
   "name": "tab-fix",
   "version": "0.1.0",
   "private": true,
+  "productName": "Tab Fix",
   "description": "Tab-to-fix writing assistant for macOS.",
   "main": "dist/desktop/main/main.js",
   "scripts": {
@@ -10,16 +11,44 @@
     "build:main": "tsc -p apps/desktop/tsconfig.main.json",
     "build:renderer": "vite build --config apps/desktop/vite.config.ts",
     "build": "npm run clean && npm run build:native && npm run build:main && npm run build:renderer",
+    "pack:mac": "npm run build && electron-builder --mac dir",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
     "dev": "npm run build:native && node scripts/dev.mjs",
     "start": "npm run build && node scripts/run-electron.mjs",
     "typecheck": "tsc -p apps/desktop/tsconfig.renderer.json --noEmit && tsc -p apps/desktop/tsconfig.main.json --noEmit"
   },
+  "build": {
+    "appId": "app.tabfix.desktop",
+    "productName": "Tab Fix",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "dist/desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "native/macos/.build/debug/TabFixNative",
+        "to": "native/macos/TabFixNative"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "apps/desktop/assets/tab-fix.icns",
+      "target": [
+        "dir",
+        "dmg"
+      ]
+    },
+    "directories": {
+      "output": "release"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "electron": "^35.7.5",
+    "electron-builder": "^26.8.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3",
     "vite": "^6.2.5"
   }
 }
-

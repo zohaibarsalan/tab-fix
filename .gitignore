@@ -2,6 +2,9 @@
 DerivedData/
 node_modules/
 dist/
+release/
+apps/desktop/assets/TabFix.iconset/
+apps/desktop/assets/tab-fix-logo.svg.png
 native/macos/.build/
 .DS_Store
 *.log

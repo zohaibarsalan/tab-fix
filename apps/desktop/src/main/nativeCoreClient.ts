@@ -1,5 +1,6 @@
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { app } from "electron";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CorrectionResult, NativeHelperEvent, NativeStatus, PermissionState } from "../shared/ipc";
@@ -11,6 +12,10 @@ function repoRoot(): string {
 }
 
 export function nativeBinaryPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "native/macos/TabFixNative");
+  }
+
   return path.join(repoRoot(), "native/macos/.build/debug/TabFixNative");
 }
 

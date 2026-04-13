@@ -1,5 +1,9 @@
 # Tab Fix
 
+<p align="center">
+  <img src="apps/desktop/assets/tab-fix-logo.svg" alt="Tab Fix logo" width="96" height="96">
+</p>
+
 Tab Fix is a macOS writing-assist app built around one interaction:
 
 1. Type in any text field.
@@ -78,6 +82,21 @@ Build everything:
 
 ```bash
 npm run build
+```
+
+Build a local macOS app bundle:
+
+```bash
+npm run pack:mac
+open "release/mac-arm64/Tab Fix.app"
+```
+
+The packaged app is the right way to test the real app name, Dock icon, App Switcher behavior, menu bar item, and packaged native helper path. The dev runner launches through the raw Electron binary, so macOS may still show `Electron` in App Switcher and Accessibility settings.
+
+Build a DMG:
+
+```bash
+npm run dist:mac
 ```
 
 Typecheck Electron code:
