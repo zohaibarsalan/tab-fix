@@ -17,25 +17,23 @@ body,
 .bubble {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin: 8px;
+  margin: 4px;
   border: 1px solid #101111;
   border-radius: 8px;
   background: #fffdf9;
   color: #101111;
-  padding: 8px 12px;
-  box-shadow: 6px 6px 0 rgba(16, 17, 17, 0.18);
+  padding: 5px;
+  box-shadow: 4px 4px 0 rgba(16, 17, 17, 0.18);
   font-size: 14px;
   font-weight: 800;
 }
 
 kbd {
-  min-width: 48px;
+  min-width: 58px;
   border-radius: 6px;
   background: #d83b2d;
   color: #fffdf9;
-  padding: 7px 9px;
+  padding: 9px 10px;
   text-align: center;
   font: inherit;
 }
-

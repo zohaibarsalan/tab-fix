@@ -16,7 +16,7 @@ if (!root) {
 root.innerHTML = `
   <div class="bubble">
     <kbd>Tab</kbd>
-    <span data-text>Fix sentence</span>
+    <span data-text hidden>Tab</span>
   </div>
 `;
 
@@ -27,4 +27,3 @@ window.tabFix.onOverlayPayload((payload: OverlayPayload) => {
     text.textContent = payload.text ?? "Fix sentence";
   }
 });
-

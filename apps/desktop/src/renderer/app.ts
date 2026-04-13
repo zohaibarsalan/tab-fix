@@ -34,10 +34,6 @@ appRoot.innerHTML = `
         <label for="preview-input">Write here</label>
         <textarea id="preview-input" spellcheck="false" autocomplete="off" placeholder="Try: i dont think this are right"></textarea>
       </div>
-      <aside class="suggestion" data-suggestion hidden aria-live="polite">
-        <span class="label">Suggested fix</span>
-        <strong data-suggestion-text></strong>
-      </aside>
     </section>
 
     <section class="system-strip" aria-label="System status">
@@ -82,8 +78,6 @@ appRoot.innerHTML = `
 `;
 
 const input = must<HTMLTextAreaElement>("#preview-input");
-const suggestion = must<HTMLElement>("[data-suggestion]");
-const suggestionText = must<HTMLElement>("[data-suggestion-text]");
 const permission = must<HTMLElement>("[data-permission]");
 const permissionNote = must<HTMLElement>("[data-permission-note]");
 const nativeStatus = must<HTMLElement>("[data-native]");
@@ -117,13 +111,10 @@ function setSuggestion(result: CorrectionResult | null): void {
   pendingCorrection = result?.changed ? result : null;
 
   if (!pendingCorrection) {
-    suggestion.hidden = true;
     void window.tabFix.hideOverlay();
     return;
   }
 
-  suggestionText.textContent = pendingCorrection.output;
-  suggestion.hidden = false;
   positionHint();
 }
 
@@ -131,9 +122,9 @@ function positionHint(): void {
   const fieldRect = input.getBoundingClientRect();
 
   void window.tabFix.showOverlay({
-    x: Math.round(window.screenX + fieldRect.right - 220),
-    y: Math.round(window.screenY + fieldRect.top - 60),
-    text: "Fix sentence"
+    x: Math.round(window.screenX + fieldRect.left + 18),
+    y: Math.round(window.screenY + fieldRect.top - 42),
+    text: "Tab"
   });
 }
 

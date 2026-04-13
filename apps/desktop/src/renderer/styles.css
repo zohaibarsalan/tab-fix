@@ -135,10 +135,7 @@ p {
 }
 
 .composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 18px;
-  align-items: stretch;
+  display: block;
   margin-top: 18px;
 }
 
@@ -171,10 +168,6 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(216, 59, 45, 0.18);
 }
 
-.suggestion[hidden] {
-  display: none;
-}
-
 kbd {
   min-width: 48px;
   border-radius: 6px;
@@ -185,26 +178,12 @@ kbd {
   font: inherit;
 }
 
-.suggestion,
 .system-strip article,
 .panel-grid article {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: var(--shadow);
-}
-
-.suggestion {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  min-height: 310px;
-  padding: 18px;
-}
-
-.suggestion strong {
-  font-size: 24px;
-  line-height: 1.25;
 }
 
 .system-strip {

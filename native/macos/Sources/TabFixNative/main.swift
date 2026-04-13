@@ -244,13 +244,47 @@ final class CorrectionEngine {
     let range = NSRange(location: 0, length: (word as NSString).length)
     let guesses = spellChecker.guesses(forWordRange: range, in: word, language: "en", inSpellDocumentWithTag: 0) ?? []
     let normalized = word.lowercased()
-
-    return guesses.first { guess in
+    let correction = spellChecker.correction(forWordRange: range, in: word, language: "en", inSpellDocumentWithTag: 0)
+    let candidates = ([correction].compactMap { $0 } + guesses).filter { guess in
       let candidate = guess.lowercased()
       return candidate.first == normalized.first &&
+        candidate.range(of: #"^[a-z]+$"#, options: .regularExpression) != nil &&
         candidate.count >= max(3, normalized.count - 1) &&
         editDistance(normalized, candidate) <= max(2, normalized.count / 3)
     }
+
+    guard var best = candidates.first else {
+      return nil
+    }
+
+    for candidate in candidates.dropFirst() {
+      let current = best.lowercased()
+      let next = candidate.lowercased()
+      let currentPrefix = commonPrefixLength(normalized, current)
+      let nextPrefix = commonPrefixLength(normalized, next)
+      let currentDistance = editDistance(normalized, current)
+      let nextDistance = editDistance(normalized, next)
+
+      if nextPrefix >= currentPrefix + 2 && nextDistance <= currentDistance {
+        best = candidate
+      }
+    }
+
+    return best
+  }
+
+  private func commonPrefixLength(_ lhs: String, _ rhs: String) -> Int {
+    var count = 0
+
+    for (left, right) in zip(lhs, rhs) {
+      if left != right {
+        break
+      }
+
+      count += 1
+    }
+
+    return count
   }
 
   private func editDistance(_ lhs: String, _ rhs: String) -> Int {
@@ -507,14 +541,16 @@ final class CrossAppService {
     pasteboard.clearContents()
     pasteboard.setString(candidate.correction.output, forType: .string)
 
-    let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true)
-    let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false)
-    keyDown?.flags = .maskCommand
-    keyUp?.flags = .maskCommand
-    keyDown?.post(tap: .cghidEventTap)
-    keyUp?.post(tap: .cghidEventTap)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+      let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true)
+      let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false)
+      keyDown?.flags = .maskCommand
+      keyUp?.flags = .maskCommand
+      keyDown?.post(tap: .cghidEventTap)
+      keyUp?.post(tap: .cghidEventTap)
+    }
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
       pasteboard.clearContents()
       if let previous {
         pasteboard.setString(previous, forType: .string)

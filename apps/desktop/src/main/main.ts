@@ -63,8 +63,8 @@ function createOverlayWindow(): BrowserWindow {
   }
 
   overlayWindow = new BrowserWindow({
-    width: 220,
-    height: 70,
+    width: 86,
+    height: 54,
     frame: false,
     transparent: true,
     resizable: false,
@@ -162,7 +162,7 @@ function handleNativeEvent(event: NativeHelperEvent): void {
       showOverlay({
         x: event.x,
         y: event.y,
-        text: "Fix sentence"
+        text: "Tab"
       });
       break;
     case "hide":
@@ -180,10 +180,12 @@ function handleNativeEvent(event: NativeHelperEvent): void {
 function showOverlay(payload: OverlayPayload): void {
   const overlay = createOverlayWindow();
   const display = screen.getDisplayNearestPoint({ x: payload.x, y: payload.y });
-  const x = Math.min(Math.max(payload.x, display.workArea.x), display.workArea.x + display.workArea.width - 220);
-  const y = Math.min(Math.max(payload.y, display.workArea.y), display.workArea.y + display.workArea.height - 70);
+  const overlayWidth = 86;
+  const overlayHeight = 54;
+  const x = Math.min(Math.max(payload.x, display.workArea.x), display.workArea.x + display.workArea.width - overlayWidth);
+  const y = Math.min(Math.max(payload.y, display.workArea.y), display.workArea.y + display.workArea.height - overlayHeight);
 
-  overlay.setBounds({ x, y, width: 220, height: 70 });
+  overlay.setBounds({ x, y, width: overlayWidth, height: overlayHeight });
   overlay.webContents.send(ipcChannels.overlayPayload, payload);
   overlay.showInactive();
 }
