@@ -1,28 +1,61 @@
 <p align="center">
-  <img src="apps/desktop/assets/tab-fix-logo.svg" alt="Tab Fix logo" width="104" height="104">
+  <img src="apps/desktop/assets/tab-fix-logo.svg" alt="Tab Fix logo" width="112" height="112">
 </p>
 
 <h1 align="center">Tab Fix</h1>
 
 <p align="center">
-  A macOS writing assistant that fixes the sentence you are typing when you press <kbd>Tab</kbd>.
+  Fix the sentence you are typing with one press of <kbd>Tab</kbd>.
 </p>
 
 <p align="center">
   <code>v0.1.0</code> - macOS prototype
 </p>
 
-## What It Does
+<p align="center">
+  <a href="https://github.com/zohaibarsalan/tab-fix/releases">Download</a>
+  ·
+  <a href="#how-it-works">How It Works</a>
+  ·
+  <a href="#roadmap">Roadmap</a>
+</p>
 
-Tab Fix watches the text field you are actively typing in. When it finds a conservative correction, it shows a small `Tab` hint near the cursor. Press `Tab` to replace the current sentence in place.
+## Overview
 
-Example:
+Tab Fix is a macOS writing assistant for quick, in-place cleanup. Type naturally, pause for the hint, then press `Tab` to fix the current sentence without opening a chat box or rewriting your whole paragraph.
 
 ```text
 i dont think this are right -> I don't think this is right.
 ```
 
-The current correction engine focuses on simple, low-risk fixes:
+Tab Fix is designed to stay out of the way. It lives in the menu bar, watches only the focused text field, and applies conservative edits that preserve what you meant to say.
+
+## Download
+
+The current release is:
+
+```text
+Tab Fix v0.1.0
+macOS Apple Silicon
+```
+
+Download the latest `.dmg` from the GitHub Releases page:
+
+https://github.com/zohaibarsalan/tab-fix/releases
+
+Open the DMG, drag `Tab Fix.app` into Applications, then launch it from Applications.
+
+Because this is an early prototype, macOS may ask you to allow the app on first launch. If it does, right-click `Tab Fix.app`, choose `Open`, and confirm.
+
+## How It Works
+
+1. Type in a text field.
+2. Pause for a moment.
+3. A small `Tab` hint appears near the cursor.
+4. Press plain `Tab`.
+5. Tab Fix replaces the current sentence in place.
+
+The first version focuses on small, useful corrections:
 
 - Spelling
 - Capitalization
@@ -31,94 +64,39 @@ The current correction engine focuses on simple, low-risk fixes:
 - Common contractions
 - Basic agreement errors
 
-## Current Status
-
-Tab Fix is an early macOS prototype. It works best in native text fields such as Notes and TextEdit. Support is improving for browser and editor surfaces such as Chrome, ChatGPT, and code editors.
-
-Implemented:
-
-- Menu bar app
-- Desktop settings window
-- `Tab` hint overlay
-- Swift native helper for macOS Accessibility
-- Focused text detection
-- Plain-Tab replacement trigger
-- Clipboard fallback for fields that reject direct Accessibility replacement
-- Local correction engine using macOS spellchecking plus rule-based cleanup
-
-Known limitations:
-
-- Some web apps expose text through Accessibility inconsistently.
-- Browser editors and code editors may require per-app fallback behavior.
-- The clipboard fallback briefly uses the clipboard, then restores the previous text.
-- Accessibility permission is required, and the app should be restarted after permission changes.
-
-## Install And Run
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Run in development:
-
-```bash
-npm run dev
-```
-
-Build and open a local macOS app bundle:
-
-```bash
-npm run pack:mac
-npm run open:mac
-```
-
-Build a DMG:
-
-```bash
-npm run dist:mac
-```
-
 ## Permissions
 
-Tab Fix needs macOS Accessibility access so the native helper can inspect the focused text field, place the hint near the cursor, intercept plain `Tab`, and replace text.
+Tab Fix needs macOS Accessibility access to read the active text field, place the hint near the cursor, detect plain `Tab`, and replace text.
 
-In development, macOS may show `Electron`, `TabFixNative`, or the terminal app that launched the helper. Enable the relevant entries, then quit and reopen Tab Fix.
+Tab Fix should only read the smallest useful text range when a correction is needed. Raw user text should not be logged by default.
 
-## Useful Commands
+## Current Status
 
-```bash
-npm run typecheck
-npm run build
-npm run build:native
-native/macos/.build/debug/TabFixNative status
-native/macos/.build/debug/TabFixNative correct "i dont think this are right"
-```
+Tab Fix is an early macOS prototype. It works best in native macOS text fields such as Notes and TextEdit.
+
+Browser and editor support is improving, but some apps expose text through Accessibility in unusual ways. Chrome, ChatGPT, T3 Code, VS Code, Slack, Discord, Safari, Messages, and Mail are the main compatibility targets.
 
 ## Roadmap
 
 Near term:
 
-- Harden Chrome, ChatGPT, T3 Code, VS Code, Slack, Discord, Messages, Mail, and Safari support.
-- Add diagnostics for focused app, role, text range, replacement method, and failure reason.
-- Improve caret positioning across multiple displays and browser coordinate systems.
-- Add excluded apps and domains.
-- Add a user dictionary for names, products, slang, and words that should never be corrected.
+- Stronger Chrome, ChatGPT, and code editor support
+- Better diagnostics for failed replacements
+- More reliable caret positioning across displays
+- Excluded apps and websites
+- A local user dictionary for names, products, slang, and words to ignore
 
 Later:
 
-- Better grammar and rewrite quality through an optional model provider.
-- Local-first settings and dictionary storage.
-- Optional account sync for dictionary and preferences.
-- Per-app trigger behavior.
-- Stronger privacy controls for sensitive apps and websites.
+- Optional model-powered corrections
+- Local-first settings and dictionary storage
+- Optional sync for preferences and dictionary entries
+- Per-app trigger behavior
+- Stronger privacy controls for sensitive apps and websites
 
-## Privacy Direction
+## Project
 
-Tab Fix should only read the smallest useful text range, only when a correction is needed, and should not log raw user text by default. Cloud processing, if added later, should be explicit and opt-in.
-
-## Project Structure
+Tab Fix is built with Electron for the app shell and Swift for the native macOS text integration.
 
 ```text
 apps/desktop

@@ -1,13 +1,28 @@
-.build/
-DerivedData/
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 release/
+out/
+.build/
+native/macos/.build/
+DerivedData/
+
+# Generated assets
 apps/desktop/assets/TabFix.iconset/
 apps/desktop/assets/tab-fix-logo.svg.png
 apps/desktop/assets/tab-fix-menubar.png
-native/macos/.build/
+
+# macOS and editor files
 .DS_Store
+*.swp
+*.swo
+
+# Logs and local environment
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 .env
 .env.local
