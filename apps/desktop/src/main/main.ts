@@ -9,6 +9,7 @@ let panelWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let trayMenu: Menu | null = null;
+let isQuitting = false;
 
 const overlaySize = {
   width: 58,
@@ -49,6 +50,14 @@ function createPanelWindow(): BrowserWindow {
   });
 
   panelWindow.once("ready-to-show", () => panelWindow?.show());
+  panelWindow.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    panelWindow?.hide();
+  });
   panelWindow.on("closed", () => {
     panelWindow = null;
   });
@@ -121,6 +130,7 @@ function setupTray(): void {
   );
   const trayIcon = icon.resize({ width: 18, height: 18 });
   tray = new Tray(trayIcon);
+  tray.setTitle("T");
   tray.setToolTip("Tab Fix");
 
   trayMenu = Menu.buildFromTemplate([
@@ -137,6 +147,25 @@ function setupTray(): void {
 
   tray.setContextMenu(trayMenu);
   tray.on("click", showPanel);
+}
+
+function setupApplicationMenu(): void {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { label: "About Tab Fix", role: "about" },
+        { type: "separator" },
+        { label: "Quit Tab Fix", accelerator: "Command+Q", click: () => app.quit() }
+      ]
+    },
+    {
+      label: "File",
+      submenu: [
+        { label: "Close Window", accelerator: "Command+W", click: () => panelWindow?.close() }
+      ]
+    }
+  ]));
 }
 
 async function requestNativePermissions() {
@@ -218,6 +247,7 @@ app.setName("Tab Fix");
 
 app.whenReady().then(() => {
   setupIpc();
+  setupApplicationMenu();
   setupTray();
   createOverlayWindow();
   nativeCore.on("event", handleNativeEvent);
@@ -232,5 +262,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   nativeCore.stopHelper();
 });

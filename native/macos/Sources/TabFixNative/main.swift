@@ -564,21 +564,21 @@ final class CrossAppService {
 
     AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
 
-    let pasteboard = NSPasteboard.general
-    let previous = pasteboard.string(forType: .string)
-
-    Thread.sleep(forTimeInterval: 0.08)
+    Thread.sleep(forTimeInterval: 0.04)
 
     var latestReplacementRange = candidate.replacementRange
     if let latestRangeValue = AXValueCreate(.cfRange, &latestReplacementRange) {
       AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, latestRangeValue)
     }
 
+    let pasteboard = NSPasteboard.general
+    let previous = pasteboard.string(forType: .string)
     pasteboard.clearContents()
     pasteboard.setString(candidate.correction.output, forType: .string)
 
-    Thread.sleep(forTimeInterval: 0.04)
-    postPasteShortcut()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+      CrossAppService.postPasteShortcut()
+    }
 
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
       let pasteboard = NSPasteboard.general
@@ -592,15 +592,29 @@ final class CrossAppService {
   }
 
   private func bestBoundsForOverlay(element: AXUIElement, selectedRange: CFRange, sourceRange: CFRange) -> CGRect? {
-    let sourceBounds = boundsForRange(element, range: sourceRange)
     let caretLocation = max(selectedRange.location, sourceRange.location)
+    let sourceBounds = boundsForRange(element, range: sourceRange)
     let caretBounds = boundsForRange(element, range: CFRange(location: caretLocation, length: 0))
+    let previousCharacterBounds = previousCharacterBounds(element: element, caretLocation: caretLocation, sourceRange: sourceRange)
 
     if let caretBounds, !isSuspiciousCaretBounds(caretBounds, sourceBounds: sourceBounds) {
       return caretBounds
     }
 
-    return sourceBounds ?? caretBounds
+    if let previousCharacterBounds, !isSuspiciousCaretBounds(previousCharacterBounds, sourceBounds: sourceBounds) {
+      return previousCharacterBounds
+    }
+
+    return sourceBounds ?? previousCharacterBounds ?? caretBounds
+  }
+
+  private func previousCharacterBounds(element: AXUIElement, caretLocation: Int, sourceRange: CFRange) -> CGRect? {
+    let previousLocation = caretLocation - 1
+    guard previousLocation >= sourceRange.location else {
+      return nil
+    }
+
+    return boundsForRange(element, range: CFRange(location: previousLocation, length: 1))
   }
 
   private func isSuspiciousCaretBounds(_ caretBounds: CGRect, sourceBounds: CGRect?) -> Bool {
@@ -617,11 +631,8 @@ final class CrossAppService {
   }
 
   private func normalizeBoundsForOverlay(_ bounds: CGRect, appName: String?, bundleIdentifier: String?) -> CGRect {
-    guard usesBottomLeftRangeCoordinates(appName: appName, bundleIdentifier: bundleIdentifier) else {
-      return bounds
-    }
-
-    guard let screen = screenContaining(bounds) ?? NSScreen.main else {
+    guard usesBottomLeftRangeCoordinates(appName: appName, bundleIdentifier: bundleIdentifier),
+          let screen = screenContaining(bounds) ?? NSScreen.main else {
       return bounds
     }
 
@@ -632,7 +643,7 @@ final class CrossAppService {
       height: bounds.height
     )
 
-    return isObviouslyWrongOverlayBounds(flipped, screen: screen) ? bounds : flipped
+    return isBadOverlayBounds(flipped, screen: screen) ? bounds : flipped
   }
 
   private func overlayPoint(for bounds: CGRect) -> CGPoint {
@@ -645,9 +656,9 @@ final class CrossAppService {
     }
   }
 
-  private func isObviouslyWrongOverlayBounds(_ bounds: CGRect, screen: NSScreen) -> Bool {
+  private func isBadOverlayBounds(_ bounds: CGRect, screen: NSScreen) -> Bool {
     let paddedFrame = screen.frame.insetBy(dx: -80, dy: -80)
-    return !paddedFrame.intersects(bounds)
+    return !paddedFrame.intersects(bounds) || bounds.minX <= 1 || bounds.minY <= 1
   }
 
   private func usesBottomLeftRangeCoordinates(appName: String?, bundleIdentifier: String?) -> Bool {
@@ -678,7 +689,7 @@ final class CrossAppService {
       normalizedName.contains("t3")
   }
 
-  private func postPasteShortcut() {
+  private static func postPasteShortcut() {
     let source = CGEventSource(stateID: .hidSystemState)
     let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 55, keyDown: true)
     let vDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
