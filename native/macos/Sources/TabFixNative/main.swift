@@ -348,6 +348,7 @@ struct TextCandidate {
   let caretBounds: CGRect
   let correction: CorrectionResult
   let appName: String?
+  let bundleIdentifier: String?
 }
 
 final class CrossAppService {
@@ -476,27 +477,30 @@ final class CrossAppService {
 
     lastInspectionKey = inspectionKey
 
-    let bounds = boundsForRange(element, range: CFRange(location: max(selectedRange.location, sourceRange.location), length: 0))
-      ?? boundsForRange(element, range: sourceRange)
+    let bounds = bestBoundsForOverlay(element: element, selectedRange: selectedRange, sourceRange: sourceRange)
       ?? fallbackBounds(element)
       ?? CGRect(x: 400, y: 400, width: 1, height: 20)
+    let app = NSWorkspace.shared.frontmostApplication
+    let normalizedBounds = normalizeBoundsForOverlay(bounds, appName: app?.localizedName, bundleIdentifier: app?.bundleIdentifier)
+    let overlayPoint = overlayPoint(for: normalizedBounds)
 
     candidate = TextCandidate(
       element: element,
       fullText: fullText,
       sourceText: source,
       replacementRange: sourceRange,
-      caretBounds: bounds,
+      caretBounds: normalizedBounds,
       correction: correction,
-      appName: NSWorkspace.shared.frontmostApplication?.localizedName
+      appName: app?.localizedName,
+      bundleIdentifier: app?.bundleIdentifier
     )
 
     writeJson(CandidateEvent(
       type: "candidate",
-      x: Int(bounds.maxX + 6),
-      y: Int(max(0, bounds.minY - 42)),
+      x: Int(overlayPoint.x),
+      y: Int(overlayPoint.y),
       correction: correction,
-      appName: NSWorkspace.shared.frontmostApplication?.localizedName
+      appName: app?.localizedName
     ))
   }
 
@@ -524,6 +528,10 @@ final class CrossAppService {
     }
 
     AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
+
+    if pasteFallback(candidate) {
+      return true
+    }
 
     let selectedTextResult = AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextAttribute as CFString, candidate.correction.output as CFString)
     if selectedTextResult == .success {
@@ -558,19 +566,22 @@ final class CrossAppService {
 
     let pasteboard = NSPasteboard.general
     let previous = pasteboard.string(forType: .string)
+
+    Thread.sleep(forTimeInterval: 0.08)
+
+    var latestReplacementRange = candidate.replacementRange
+    if let latestRangeValue = AXValueCreate(.cfRange, &latestReplacementRange) {
+      AXUIElementSetAttributeValue(candidate.element, kAXSelectedTextRangeAttribute as CFString, latestRangeValue)
+    }
+
     pasteboard.clearContents()
     pasteboard.setString(candidate.correction.output, forType: .string)
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
-      let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true)
-      let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false)
-      keyDown?.flags = .maskCommand
-      keyUp?.flags = .maskCommand
-      keyDown?.post(tap: .cghidEventTap)
-      keyUp?.post(tap: .cghidEventTap)
-    }
+    Thread.sleep(forTimeInterval: 0.04)
+    postPasteShortcut()
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+      let pasteboard = NSPasteboard.general
       pasteboard.clearContents()
       if let previous {
         pasteboard.setString(previous, forType: .string)
@@ -578,6 +589,110 @@ final class CrossAppService {
     }
 
     return true
+  }
+
+  private func bestBoundsForOverlay(element: AXUIElement, selectedRange: CFRange, sourceRange: CFRange) -> CGRect? {
+    let sourceBounds = boundsForRange(element, range: sourceRange)
+    let caretLocation = max(selectedRange.location, sourceRange.location)
+    let caretBounds = boundsForRange(element, range: CFRange(location: caretLocation, length: 0))
+
+    if let caretBounds, !isSuspiciousCaretBounds(caretBounds, sourceBounds: sourceBounds) {
+      return caretBounds
+    }
+
+    return sourceBounds ?? caretBounds
+  }
+
+  private func isSuspiciousCaretBounds(_ caretBounds: CGRect, sourceBounds: CGRect?) -> Bool {
+    if caretBounds.minX <= 1 && caretBounds.minY <= 1 {
+      return true
+    }
+
+    guard let sourceBounds else {
+      return false
+    }
+
+    let allowed = sourceBounds.insetBy(dx: -48, dy: -48)
+    return !allowed.contains(CGPoint(x: caretBounds.midX, y: caretBounds.midY))
+  }
+
+  private func normalizeBoundsForOverlay(_ bounds: CGRect, appName: String?, bundleIdentifier: String?) -> CGRect {
+    guard usesBottomLeftRangeCoordinates(appName: appName, bundleIdentifier: bundleIdentifier) else {
+      return bounds
+    }
+
+    guard let screen = screenContaining(bounds) ?? NSScreen.main else {
+      return bounds
+    }
+
+    let flipped = CGRect(
+      x: bounds.minX,
+      y: screen.frame.maxY - bounds.maxY + screen.frame.minY,
+      width: bounds.width,
+      height: bounds.height
+    )
+
+    return isObviouslyWrongOverlayBounds(flipped, screen: screen) ? bounds : flipped
+  }
+
+  private func overlayPoint(for bounds: CGRect) -> CGPoint {
+    CGPoint(x: bounds.maxX + 6, y: max(0, bounds.minY - 34))
+  }
+
+  private func screenContaining(_ rect: CGRect) -> NSScreen? {
+    NSScreen.screens.first { screen in
+      screen.frame.intersects(rect) || screen.frame.contains(CGPoint(x: rect.midX, y: rect.midY))
+    }
+  }
+
+  private func isObviouslyWrongOverlayBounds(_ bounds: CGRect, screen: NSScreen) -> Bool {
+    let paddedFrame = screen.frame.insetBy(dx: -80, dy: -80)
+    return !paddedFrame.intersects(bounds)
+  }
+
+  private func usesBottomLeftRangeCoordinates(appName: String?, bundleIdentifier: String?) -> Bool {
+    let browserBundles = [
+      "com.google.Chrome",
+      "com.google.Chrome.canary",
+      "com.brave.Browser",
+      "com.microsoft.edgemac",
+      "company.thebrowser.Browser",
+      "com.operasoftware.Opera"
+    ]
+
+    if let bundleIdentifier, browserBundles.contains(bundleIdentifier) {
+      return true
+    }
+
+    let normalizedBundle = bundleIdentifier?.lowercased() ?? ""
+    let normalizedName = appName?.lowercased() ?? ""
+
+    return normalizedBundle.contains("electron") ||
+      normalizedBundle.contains("openai") ||
+      normalizedBundle.contains("chatgpt") ||
+      normalizedBundle.contains("codex") ||
+      normalizedBundle.contains("t3") ||
+      normalizedName.contains("chatgpt") ||
+      normalizedName.contains("codex") ||
+      normalizedName.contains("t3 code") ||
+      normalizedName.contains("t3")
+  }
+
+  private func postPasteShortcut() {
+    let source = CGEventSource(stateID: .hidSystemState)
+    let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 55, keyDown: true)
+    let vDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
+    let vUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
+    let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 55, keyDown: false)
+
+    commandDown?.flags = .maskCommand
+    vDown?.flags = .maskCommand
+    vUp?.flags = .maskCommand
+
+    commandDown?.post(tap: .cghidEventTap)
+    vDown?.post(tap: .cghidEventTap)
+    vUp?.post(tap: .cghidEventTap)
+    commandUp?.post(tap: .cghidEventTap)
   }
 
   private func clearCandidate(reason: String) {

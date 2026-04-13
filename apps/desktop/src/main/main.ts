@@ -114,13 +114,12 @@ function setupTray(): void {
     "data:image/svg+xml;utf8," +
       encodeURIComponent(`
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-          <rect x="5" y="5" width="22" height="22" rx="6" fill="black"/>
+          <rect x="5" y="5" width="22" height="22" rx="6" fill="#dc3b2f"/>
           <path d="M9 10h14v4h-5v10h-4V14H9z" fill="white"/>
         </svg>
       `)
   );
   const trayIcon = icon.resize({ width: 18, height: 18 });
-  trayIcon.setTemplateImage(true);
   tray = new Tray(trayIcon);
   tray.setToolTip("Tab Fix");
 
