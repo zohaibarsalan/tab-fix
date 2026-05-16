@@ -12,8 +12,8 @@ let trayMenu: Menu | null = null;
 let isQuitting = false;
 
 const overlaySize = {
-  width: 58,
-  height: 38
+  width: 178,
+  height: 34
 };
 
 function resourcePath(...segments: string[]): string {
@@ -280,6 +280,7 @@ function handleNativeEvent(event: NativeHelperEvent): void {
       showOverlay({
         x: event.x,
         y: event.y,
+        label: event.correction.changeCount > 1 ? `${event.correction.changeCount} fixes available` : "Fix sentence",
         text: "Tab"
       });
       break;

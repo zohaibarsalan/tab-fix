@@ -21,15 +21,24 @@ body,
 .bubble {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   margin: 3px;
   border: 1px solid #101111;
   border-radius: 7px;
   background: #fffdf9;
   color: #101111;
-  padding: 3px;
-  box-shadow: 3px 3px 0 rgba(16, 17, 17, 0.18);
+  padding: 4px 5px 4px 9px;
+  box-shadow: 0 8px 22px rgba(16, 17, 17, 0.16);
   font-size: 12px;
   font-weight: 800;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+[data-label] {
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 kbd {
@@ -37,7 +46,7 @@ kbd {
   border-radius: 5px;
   background: #dc3b2f;
   color: #fffdf9;
-  padding: 5px 4px;
+  padding: 4px;
   text-align: center;
   font: inherit;
   line-height: 14px;

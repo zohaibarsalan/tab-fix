@@ -21,6 +21,30 @@ struct CorrectionResult: Codable {
   let changed: Bool
   let fixes: [String]
   let durationMs: Int
+  let risk: String
+  let changeCount: Int
+}
+
+struct CorrectionChange {
+  let original: String
+  let replacement: String
+  let type: CorrectionChangeType
+}
+
+enum CorrectionChangeType {
+  case spelling
+  case capitalization
+  case punctuation
+  case contraction
+  case abbreviation
+  case shorthand
+  case grammar
+}
+
+enum CorrectionRisk: String {
+  case low
+  case medium
+  case high
 }
 
 struct NativeEvent<T: Encodable>: Encodable {
@@ -53,17 +77,33 @@ enum NativeCommand {
     if prompt {
       let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
       AXIsProcessTrustedWithOptions(options)
+      CGRequestListenEventAccess()
     }
 
     let accessibility = AXIsProcessTrusted()
+    let inputMonitoring = CGPreflightListenEventAccess()
 
     return PermissionState(
       accessibility: accessibility,
-      inputMonitoring: false,
-      note: accessibility
-        ? "Accessibility permission is granted."
-        : "Accessibility permission is required for cross-app text detection and replacement."
+      inputMonitoring: inputMonitoring,
+      note: permissionNote(accessibility: accessibility, inputMonitoring: inputMonitoring)
     )
+  }
+
+  private static func permissionNote(accessibility: Bool, inputMonitoring: Bool) -> String {
+    if accessibility && inputMonitoring {
+      return "Accessibility and Input Monitoring permissions are granted."
+    }
+
+    if !accessibility && !inputMonitoring {
+      return "Tab-fix needs Accessibility to read and replace chosen text, and Input Monitoring to detect Tab while another app is focused."
+    }
+
+    if !accessibility {
+      return "Tab-fix needs Accessibility permission to read and replace the text you choose to fix."
+    }
+
+    return "Tab-fix needs Input Monitoring permission to detect when you press Tab to accept a suggestion."
   }
 
   static func status() -> NativeStatus {
@@ -87,120 +127,128 @@ enum NativeCommand {
 
 final class CorrectionEngine {
   private let spellChecker = NSSpellChecker.shared
+  private let protectedTerms: Set<String> = [
+    "AA", "HL", "IA", "IBDP", "API", "UI", "UX", "JS", "TS",
+    "Next.js", "tRPC", "Redis", "BullMQ", "PostgreSQL", "dashboardWISE",
+    "tab-fix", "macOS"
+  ]
+  private let abbreviationReplacements: [(pattern: String, replacement: String)] = [
+    (#"\bmath aa hl\b"#, "Math AA HL"),
+    (#"\baa hl\b"#, "AA HL"),
+    (#"\bchem ia\b"#, "Chem IA"),
+    (#"\bphysics ia\b"#, "Physics IA"),
+    (#"\bibdp\b"#, "IBDP"),
+    (#"\bapi\b"#, "API"),
+    (#"\bui\b"#, "UI"),
+    (#"\bux\b"#, "UX"),
+    (#"\bjs\b"#, "JS"),
+    (#"\bts\b"#, "TS"),
+    (#"\bia\b"#, "IA"),
+    (#"\bmacos\b"#, "macOS"),
+    (#"\bnextjs\b"#, "Next.js"),
+    (#"\bpostgres\b"#, "PostgreSQL")
+  ]
+  private let typoReplacements: [(pattern: String, replacement: String)] = [
+    (#"\bsetence\b"#, "sentence"),
+    (#"\bbecuase\b"#, "because"),
+    (#"\brecieve\b"#, "receive"),
+    (#"\bdosent\b"#, "doesn't")
+  ]
+  private let shorthandReplacements: [(pattern: String, replacement: String)] = [
+    (#"\btmrw\b"#, "tomorrow"),
+    (#"\btmr\b"#, "tomorrow"),
+    (#"\babt\b"#, "about"),
+    (#"\bbc\b"#, "because"),
+    (#"\bbcz\b"#, "because"),
+    (#"\brn\b"#, "right now")
+  ]
+  private let contractionReplacements: [(pattern: String, replacement: String)] = [
+    (#"\bdont\b"#, "don't"),
+    (#"\bcant\b"#, "can't"),
+    (#"\bwont\b"#, "won't"),
+    (#"\bim\b"#, "I'm"),
+    (#"\bive\b"#, "I've"),
+    (#"\bisnt\b"#, "isn't"),
+    (#"\bdoesnt\b"#, "doesn't"),
+    (#"\bshouldnt\b"#, "shouldn't"),
+    (#"\bwouldnt\b"#, "wouldn't"),
+    (#"\bcouldnt\b"#, "couldn't")
+  ]
+  private let preservedCasualTerms: Set<String> = ["idk", "lol", "lmao", "wtf"]
 
   func correct(_ input: String) -> CorrectionResult {
     let startedAt = DispatchTime.now()
-    var fixes: [String] = []
+    var changes: [CorrectionChange] = []
     let leading = input.prefix { $0.isWhitespace }
     let trailing = input.reversed().prefix { $0.isWhitespace }.reversed()
     var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
-    applyRule("Collapsed repeated whitespace", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+    applyRegexRules(abbreviationReplacements, type: .abbreviation, to: &text, changes: &changes)
+    applyRegexRules(shorthandReplacements, type: .shorthand, to: &text, changes: &changes)
+    applyRegexRules(contractionReplacements, type: .contraction, to: &text, changes: &changes)
+    applyRegexRules(typoReplacements, type: .spelling, to: &text, changes: &changes)
+    applyRegexRule(#"\b(make|build|create) macOS app\b"#, replacement: "$1 a macOS app", type: .grammar, to: &text, changes: &changes)
+
+    let protector = TokenProtector(text: text, protectedTerms: protectedTerms, preservedCasualTerms: preservedCasualTerms)
+    var working = protector.protectedText
+
+    applyRegexRule(#"\bi\b"#, replacement: "I", type: .capitalization, to: &working, changes: &changes)
+
+    let spellingFixed = correctMisspellings(working, changes: &changes)
+    if spellingFixed != working {
+      working = spellingFixed
     }
 
-    applyRule("Fixed space before punctuation", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"\s+([,.;:!?])"#, with: "$1", options: .regularExpression)
+    let capitalized = capitalizeSentenceStart(working, changes: &changes)
+    if capitalized != working {
+      working = capitalized
     }
 
-    applyRule("Added space after punctuation", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"([,.;:!?])([A-Za-z])"#, with: "$1 $2", options: .regularExpression)
-    }
-
-    applyRule("Capitalized standalone I", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"\bi\b"#, with: "I", options: .regularExpression)
-    }
-
-    applyRule("Fixed common contractions", to: &text, fixes: &fixes) {
-      var next = $0
-      let replacements = [
-        (#"\bdont\b"#, "don't"),
-        (#"\bcant\b"#, "can't"),
-        (#"\bwont\b"#, "won't"),
-        (#"\bim\b"#, "I'm"),
-        (#"\bive\b"#, "I've"),
-        (#"\bid\b"#, "I'd"),
-        (#"\bill\b"#, "I'll"),
-        (#"\bthats\b"#, "that's"),
-        (#"\btheres\b"#, "there's"),
-        (#"\bisnt\b"#, "isn't"),
-        (#"\barent\b"#, "aren't")
-      ]
-
-      for (pattern, replacement) in replacements {
-        next = next.replacingOccurrences(of: pattern, with: replacement, options: [.regularExpression, .caseInsensitive])
-      }
-
-      return next
-    }
-
-    applyRule("Fixed common agreement errors", to: &text, fixes: &fixes) {
-      var next = $0
-      let replacements = [
-        (#"\bthis are\b"#, "this is"),
-        (#"\bthis seem\b"#, "this seems"),
-        (#"\bthis look\b"#, "this looks"),
-        (#"\bthis feel\b"#, "this feels"),
-        (#"\bthat are\b"#, "that is"),
-        (#"\bthat seem\b"#, "that seems"),
-        (#"\bthat look\b"#, "that looks"),
-        (#"\bthat feel\b"#, "that feels"),
-        (#"\bthese is\b"#, "these are"),
-        (#"\bthose is\b"#, "those are"),
-        (#"\byou is\b"#, "you are"),
-        (#"\bwe was\b"#, "we were"),
-        (#"\bthey was\b"#, "they were"),
-        (#"\bI has\b"#, "I have")
-      ]
-
-      for (pattern, replacement) in replacements {
-        next = next.replacingOccurrences(of: pattern, with: replacement, options: [.regularExpression, .caseInsensitive])
-      }
-
-      return next
-    }
-
-    applyRule("Fixed article before vowel sound", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"\ba ([aeiouAEIOU])"#, with: "an $1", options: .regularExpression)
-    }
-
-    applyRule("Added comma after opening interjection", to: &text, fixes: &fixes) {
-      $0.replacingOccurrences(of: #"^(wow|hey|yeah|yes|no|well|okay|ok)\s+"#, with: "$1, ", options: [.regularExpression, .caseInsensitive])
-    }
-
-    let spellingFixed = correctMisspellings(text)
-    if spellingFixed != text {
-      text = spellingFixed
-      fixes.append("Fixed spelling")
-    }
-
-    let capitalized = capitalizeSentenceStarts(text)
-    if capitalized != text {
-      text = capitalized
-      fixes.append("Capitalized sentence starts")
-    }
-
-    if !text.isEmpty && !text.hasSuffix(".") && !text.hasSuffix("!") && !text.hasSuffix("?") {
-      text += "."
-      fixes.append("Added terminal punctuation")
-    }
+    text = protector.restore(working)
+    text = capitalizeSentenceStart(text, changes: &changes)
+    text = fixTerminalPunctuation(text, changes: &changes)
 
     let output = String(leading) + text + String(trailing)
     let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds
+    let risk = scoreRisk(original: input, corrected: output, changes: changes)
+    let isUsefulLowRiskChange = output != input && risk == .low
 
-    return CorrectionResult(input: input, output: output, changed: output != input, fixes: fixes, durationMs: Int(elapsed / 1_000_000))
+    return CorrectionResult(
+      input: input,
+      output: output,
+      changed: isUsefulLowRiskChange,
+      fixes: Array(Set(changes.map { label(for: $0.type) })).sorted(),
+      durationMs: Int(elapsed / 1_000_000),
+      risk: risk.rawValue,
+      changeCount: changes.count
+    )
   }
 
-  private func applyRule(_ label: String, to text: inout String, fixes: inout [String], transform: (String) -> String) {
-    let next = transform(text)
-
-    if next != text {
-      text = next
-      fixes.append(label)
+  private func applyRegexRules(_ replacements: [(pattern: String, replacement: String)], type: CorrectionChangeType, to text: inout String, changes: inout [CorrectionChange]) {
+    for replacement in replacements {
+      applyRegexRule(replacement.pattern, replacement: replacement.replacement, type: type, to: &text, changes: &changes)
     }
   }
 
-  private func correctMisspellings(_ text: String) -> String {
+  private func applyRegexRule(_ pattern: String, replacement: String, type: CorrectionChangeType, to text: inout String, changes: inout [CorrectionChange]) {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+      return
+    }
+
+    let before = text
+    let source = before as NSString
+    let matches = regex.matches(in: before, range: NSRange(location: 0, length: source.length))
+    guard !matches.isEmpty else {
+      return
+    }
+
+    text = regex.stringByReplacingMatches(in: before, range: NSRange(location: 0, length: source.length), withTemplate: replacement)
+    for match in matches {
+      changes.append(CorrectionChange(original: source.substring(with: match.range), replacement: replacement, type: type))
+    }
+  }
+
+  private func correctMisspellings(_ text: String, changes: inout [CorrectionChange]) -> String {
     guard let regex = try? NSRegularExpression(pattern: #"\b[A-Za-z']+\b"#) else {
       return text
     }
@@ -217,14 +265,27 @@ final class CorrectionEngine {
         continue
       }
 
-      result.replaceCharacters(in: match.range, with: preserveCase(source: word, replacement: replacement))
+      let casedReplacement = preserveCase(source: word, replacement: replacement)
+      result.replaceCharacters(in: match.range, with: casedReplacement)
+      changes.append(CorrectionChange(original: word, replacement: casedReplacement, type: .spelling))
     }
 
     return result as String
   }
 
   private func shouldSpellCheck(_ word: String) -> Bool {
-    word.count > 2 && word.rangeOfCharacter(from: .decimalDigits) == nil
+    guard word.count > 2,
+          word.rangeOfCharacter(from: .decimalDigits) == nil,
+          word.range(of: "__TABFIX_TOKEN_") == nil,
+          word.range(of: "'") == nil else {
+      return false
+    }
+
+    if word.uppercased() == word || word.contains(where: { $0.isUppercase }) {
+      return false
+    }
+
+    return true
   }
 
   private func isMisspelled(_ word: String) -> Bool {
@@ -321,22 +382,202 @@ final class CorrectionEngine {
     return replacement
   }
 
-  private func capitalizeSentenceStarts(_ text: String) -> String {
-    guard let regex = try? NSRegularExpression(pattern: #"(^|[.!?]\s+)([a-z])"#) else {
+  private func capitalizeSentenceStart(_ text: String, changes: inout [CorrectionChange]) -> String {
+    if let firstWord = matches(for: #"^\s*([A-Za-z]+)\b"#, in: text).first,
+       preservedCasualTerms.contains(firstWord.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+      return text
+    }
+
+    if let firstWord = matches(for: #"^\s*([A-Za-z]+[A-Z][A-Za-z0-9]*)\b"#, in: text).first, !firstWord.isEmpty {
+      return text
+    }
+
+    guard let regex = try? NSRegularExpression(pattern: #"^(\s*)([a-z])"#) else {
       return text
     }
 
     let source = text as NSString
     let result = NSMutableString(string: text)
-    let matches = regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed()
-
-    for match in matches {
-      let letterRange = match.range(at: 2)
-      let letter = source.substring(with: letterRange).uppercased()
-      result.replaceCharacters(in: letterRange, with: letter)
+    guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: source.length)) else {
+      return text
     }
 
+    let letterRange = match.range(at: 2)
+    let original = source.substring(with: letterRange)
+    let letter = original.uppercased()
+    result.replaceCharacters(in: letterRange, with: letter)
+    changes.append(CorrectionChange(original: original, replacement: letter, type: .capitalization))
     return result as String
+  }
+
+  private func fixTerminalPunctuation(_ text: String, changes: inout [CorrectionChange]) -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty,
+          let last = trimmed.last,
+          last.isLetter || last.isNumber else {
+      return text
+    }
+
+    let words = matches(for: #"\b[A-Za-z]+\b"#, in: trimmed).map { $0.lowercased() }
+    if !words.isEmpty && words.allSatisfy({ preservedCasualTerms.contains($0) }) {
+      return text
+    }
+
+    let lower = trimmed.lowercased()
+    let questionPrefixes = [
+      "what", "why", "how", "when", "where", "who", "which",
+      "can i", "could i", "should i", "do i", "does it", "is this", "are you"
+    ]
+    let punctuation = questionPrefixes.contains { lower == $0 || lower.hasPrefix($0 + " ") } ? "?" : "."
+    changes.append(CorrectionChange(original: "", replacement: punctuation, type: .punctuation))
+    return text + punctuation
+  }
+
+  private func scoreRisk(original: String, corrected: String, changes: [CorrectionChange]) -> CorrectionRisk {
+    if original == corrected || changes.isEmpty {
+      return .low
+    }
+
+    var points = 0
+    if numberTokens(original) != numberTokens(corrected) { points += 100 }
+    if containsProtectedMarkerChange(original: original, corrected: corrected) { points += 100 }
+    if wordCount(corrected) < max(1, wordCount(original) - 3) { points += 40 }
+    if corrected.count > 0 && abs(corrected.count - original.count) > max(24, original.count / 3) { points += 30 }
+    if changedQuotedText(original: original, corrected: corrected) { points += 25 }
+
+    for change in changes {
+      switch change.type {
+      case .spelling: points += 5
+      case .capitalization: points += 2
+      case .punctuation: points += 2
+      case .contraction: points += 3
+      case .abbreviation: points += 3
+      case .shorthand: points += 5
+      case .grammar: points += 5
+      }
+    }
+
+    if points >= 60 { return .high }
+    if points >= 25 { return .medium }
+    return .low
+  }
+
+  private func label(for type: CorrectionChangeType) -> String {
+    switch type {
+    case .spelling: return "Spelling"
+    case .capitalization: return "Capitalization"
+    case .punctuation: return "Punctuation"
+    case .contraction: return "Contractions"
+    case .abbreviation: return "Abbreviations"
+    case .shorthand: return "Shorthand"
+    case .grammar: return "Grammar"
+    }
+  }
+
+  private func numberTokens(_ text: String) -> [String] {
+    matches(for: #"\b\d+(?:[.,:/-]\d+)*\b|\$\d+(?:\.\d+)?"#, in: text)
+  }
+
+  private func wordCount(_ text: String) -> Int {
+    matches(for: #"\b[\p{L}\p{N}_'-]+\b"#, in: text).count
+  }
+
+  private func containsProtectedMarkerChange(original: String, corrected: String) -> Bool {
+    original.contains("__TABFIX_TOKEN_") || corrected.contains("__TABFIX_TOKEN_")
+  }
+
+  private func changedQuotedText(original: String, corrected: String) -> Bool {
+    matches(for: #""[^"]*""#, in: original) != matches(for: #""[^"]*""#, in: corrected)
+  }
+
+  private func matches(for pattern: String, in text: String) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+      return []
+    }
+
+    let source = text as NSString
+    return regex.matches(in: text, range: NSRange(location: 0, length: source.length)).map {
+      source.substring(with: $0.range)
+    }
+  }
+}
+
+final class TokenProtector {
+  private(set) var protectedText: String
+  private var tokens: [(marker: String, value: String)] = []
+  private let protectedTerms: Set<String>
+  private let preservedCasualTerms: Set<String>
+
+  init(text: String, protectedTerms: Set<String>, preservedCasualTerms: Set<String>) {
+    self.protectedText = text
+    self.protectedTerms = protectedTerms
+    self.preservedCasualTerms = preservedCasualTerms
+    protect()
+  }
+
+  func restore(_ text: String) -> String {
+    var restored = text
+    for token in tokens.reversed() {
+      restored = restored.replacingOccurrences(of: token.marker, with: token.value)
+    }
+
+    return restored
+  }
+
+  private func protect() {
+    let patterns = [
+      #"https?://[^\s)\]]+"#,
+      #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
+      #"`[^`]+`"#,
+      #"\[[^\]]+\]\([^)]+\)"#,
+      #"~?/(?:[\w .-]+/)*[\w .-]+\.[A-Za-z0-9]+"#,
+      #"\b[A-Z][A-Z0-9_]{2,}\b"#,
+      #"\b[A-Za-z]+[A-Z][A-Za-z0-9]*\b"#,
+      #"\b[a-z]+(?:_[a-z0-9]+)+\b"#,
+      #"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b"#,
+      #"\b\d{4}-\d{2}-\d{2}\b"#,
+      #"\$\d+(?:\.\d+)?(?:/[A-Za-z]+)?\b"#,
+      #"\b(?:pnpm|npm|yarn|bun|git|swift|xcodebuild)\s+[A-Za-z0-9:_./-]+\b"#
+    ]
+
+    for pattern in patterns {
+      protectMatches(pattern: pattern, options: [.caseInsensitive])
+    }
+
+    for term in protectedTerms {
+      protectLiteral(term)
+    }
+
+    for term in preservedCasualTerms {
+      protectMatches(pattern: #"\b\#(NSRegularExpression.escapedPattern(for: term))\b"#, options: [.caseInsensitive])
+    }
+  }
+
+  private func protectLiteral(_ literal: String) {
+    protectMatches(pattern: #"\b\#(NSRegularExpression.escapedPattern(for: literal))\b"#, options: literal.range(of: #"[A-Z]"#, options: .regularExpression) == nil ? [.caseInsensitive] : [])
+  }
+
+  private func protectMatches(pattern: String, options: NSRegularExpression.Options = []) {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+      return
+    }
+
+    let source = protectedText as NSString
+    let matches = regex.matches(in: protectedText, range: NSRange(location: 0, length: source.length)).reversed()
+    let result = NSMutableString(string: protectedText)
+
+    for match in matches {
+      let value = source.substring(with: match.range)
+      if value.contains("__TABFIX_TOKEN_") {
+        continue
+      }
+
+      let marker = "__TABFIX_TOKEN_\(tokens.count)__"
+      tokens.append((marker: marker, value: value))
+      result.replaceCharacters(in: match.range, with: marker)
+    }
+
+    protectedText = result as String
   }
 }
 
@@ -450,6 +691,12 @@ final class CrossAppService {
       return Unmanaged.passUnretained(event)
     }
 
+    if keyCode == 53 {
+      debounceTimer?.invalidate()
+      clearCandidate(reason: "escape")
+      return Unmanaged.passUnretained(event)
+    }
+
     if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
       debounceTimer?.invalidate()
       clearCandidate(reason: "modifier")
@@ -492,12 +739,15 @@ final class CrossAppService {
 
   private func scheduleInspection() {
     debounceTimer?.invalidate()
-    debounceTimer = Timer.scheduledTimer(timeInterval: 0.22, target: self, selector: #selector(inspectFocusedText), userInfo: nil, repeats: false)
+    debounceTimer = Timer.scheduledTimer(timeInterval: 0.55, target: self, selector: #selector(inspectFocusedText), userInfo: nil, repeats: false)
   }
 
   @objc private func inspectFocusedText() {
     guard !isFrontmostAppTabFix(),
+          !isFrontmostAppDisabled(),
           let element = focusedElement(),
+          isEditableTextElement(element),
+          !isSensitiveElement(element),
           let selectedRange = selectedTextRange(element),
           let snapshot = textSnapshot(element, selectedRange: selectedRange) else {
       clearCandidate(reason: "no-editable-text")
@@ -519,8 +769,14 @@ final class CrossAppService {
       length: relativeSourceRange.length
     )
     let source = (snapshot.text as NSString).substring(with: NSRange(location: relativeSourceRange.location, length: relativeSourceRange.length))
-    guard source.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 else {
+    let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmedSource.count >= 4 else {
       clearCandidate(reason: "empty-source")
+      return
+    }
+
+    guard (source as NSString).length <= 300 else {
+      clearCandidate(reason: "source-too-long")
       return
     }
 
@@ -530,7 +786,7 @@ final class CrossAppService {
     }
 
     let correction = engine.correct(source)
-    guard correction.changed else {
+    guard correction.changed, correction.risk == "low" else {
       clearCandidate(reason: "no-change")
       return
     }
@@ -890,21 +1146,35 @@ final class CrossAppService {
     let nsText = text as NSString
     var start = selectedRange.location
     var end = selectedRange.location
+    let nonBreakingAbbreviations = [
+      "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "e.g.", "i.e.", "etc.", "vs.", "Fig.", "Eq.", "No."
+    ]
 
     while start > 0 {
       let scalar = nsText.character(at: start - 1)
-      if scalar == 10 || scalar == 13 || scalar == 46 || scalar == 33 || scalar == 63 {
+      if scalar == 10 || scalar == 13 || scalar == 33 || scalar == 63 {
         break
       }
+
+      if scalar == 46 && !isProtectedSentenceDot(text: text, dotLocation: start - 1, abbreviations: nonBreakingAbbreviations) {
+        break
+      }
+
       start -= 1
     }
 
     while end < length {
       let scalar = nsText.character(at: end)
-      if scalar == 10 || scalar == 13 || scalar == 46 || scalar == 33 || scalar == 63 {
+      if scalar == 10 || scalar == 13 || scalar == 33 || scalar == 63 {
         end += 1
         break
       }
+
+      if scalar == 46 && !isProtectedSentenceDot(text: text, dotLocation: end, abbreviations: nonBreakingAbbreviations) {
+        end += 1
+        break
+      }
+
       end += 1
     }
 
@@ -921,6 +1191,28 @@ final class CrossAppService {
     }
 
     return CFRange(location: start, length: end - start)
+  }
+
+  private func isProtectedSentenceDot(text: String, dotLocation: Int, abbreviations: [String]) -> Bool {
+    let nsText = text as NSString
+    let length = nsText.length
+    let prefixStart = max(0, dotLocation - 12)
+    let suffixEnd = min(length, dotLocation + 12)
+    let surrounding = nsText.substring(with: NSRange(location: prefixStart, length: suffixEnd - prefixStart))
+
+    if abbreviations.contains(where: { surrounding.contains($0) }) {
+      return true
+    }
+
+    if surrounding.range(of: #"[A-Za-z0-9]+\.[A-Za-z0-9]+"#, options: .regularExpression) != nil {
+      return true
+    }
+
+    if surrounding.range(of: #"\bv\d+\.\d+"#, options: [.regularExpression, .caseInsensitive]) != nil {
+      return true
+    }
+
+    return false
   }
 
   private func textSnapshot(_ element: AXUIElement, selectedRange: CFRange) -> TextSnapshot? {
@@ -943,7 +1235,7 @@ final class CrossAppService {
 
     let selectedStart = min(max(0, selectedRange.location), characterCount)
     let selectedEnd = min(max(selectedStart, selectedRange.location + selectedRange.length), characterCount)
-    let radius = 4000
+    let radius = 1000
     let start = max(0, selectedStart - radius)
     let end = min(characterCount, max(selectedEnd + radius, selectedStart + radius))
     let length = end - start
@@ -1024,6 +1316,36 @@ final class CrossAppService {
     return value as? String
   }
 
+  private func isEditableTextElement(_ element: AXUIElement) -> Bool {
+    let role = stringAttribute(element, kAXRoleAttribute as String) ?? ""
+    let subrole = stringAttribute(element, kAXSubroleAttribute as String) ?? ""
+    let acceptedRoles = [
+      kAXTextFieldRole as String,
+      kAXTextAreaRole as String,
+      kAXComboBoxRole as String
+    ]
+
+    if acceptedRoles.contains(role) {
+      return true
+    }
+
+    return role == kAXGroupRole as String && subrole.lowercased().contains("text")
+  }
+
+  private func isSensitiveElement(_ element: AXUIElement) -> Bool {
+    let role = stringAttribute(element, kAXRoleAttribute as String) ?? ""
+    let subrole = stringAttribute(element, kAXSubroleAttribute as String) ?? ""
+    let description = stringAttribute(element, kAXDescriptionAttribute as String)?.lowercased() ?? ""
+    let title = stringAttribute(element, kAXTitleAttribute as String)?.lowercased() ?? ""
+
+    if role == kAXTextFieldRole as String && subrole.lowercased().contains("secure") {
+      return true
+    }
+
+    let sensitiveWords = ["password", "passcode", "security code", "one-time code", "2fa", "credit card", "card number", "cvv"]
+    return sensitiveWords.contains { description.contains($0) || title.contains($0) }
+  }
+
   private func intAttribute(_ element: AXUIElement, _ attribute: String) -> Int? {
     var value: CFTypeRef?
     let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
@@ -1079,6 +1401,30 @@ final class CrossAppService {
       name == "electron" ||
       bundle.contains("electron") ||
       bundle.contains("tab-fix")
+  }
+
+  private func isFrontmostAppDisabled() -> Bool {
+    guard let app = NSWorkspace.shared.frontmostApplication else {
+      return true
+    }
+
+    let name = app.localizedName?.lowercased() ?? ""
+    let bundle = app.bundleIdentifier?.lowercased() ?? ""
+    let blockedBundles = [
+      "com.apple.terminal",
+      "com.googlecode.iterm2",
+      "com.microsoft.vscode",
+      "com.apple.dt.xcode",
+      "com.apple.systempreferences",
+      "com.apple.systemsettings",
+      "com.1password",
+      "com.agilebits.onepassword",
+      "com.bitwarden.desktop",
+      "com.lastpass.lastpass"
+    ]
+    let blockedNames = ["terminal", "iterm", "visual studio code", "xcode", "system settings", "1password", "bitwarden", "lastpass"]
+
+    return blockedBundles.contains(bundle) || blockedNames.contains(where: { name.contains($0) })
   }
 }
 

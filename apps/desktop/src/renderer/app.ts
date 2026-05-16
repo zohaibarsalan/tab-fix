@@ -100,8 +100,9 @@ function must<T extends Element>(selector: string): T {
 }
 
 function renderState(state: AppState): void {
-  permission.textContent = state.native.permissions.accessibility ? "Ready" : "Needs access";
-  permission.dataset.state = state.native.permissions.accessibility ? "ready" : "blocked";
+  const hasNativeAccess = state.native.permissions.accessibility && state.native.permissions.inputMonitoring;
+  permission.textContent = hasNativeAccess ? "Ready" : "Needs access";
+  permission.dataset.state = hasNativeAccess ? "ready" : "blocked";
   permissionNote.textContent = state.native.permissions.note;
   nativeStatus.textContent = state.native.ok ? "Connected" : "Offline";
   nativeStatus.dataset.state = state.native.ok ? "ready" : "blocked";
@@ -119,11 +120,16 @@ function setSuggestion(result: CorrectionResult | null): void {
 }
 
 function positionHint(): void {
+  if (!pendingCorrection) {
+    return;
+  }
+
   const fieldRect = input.getBoundingClientRect();
 
   void window.tabFix.showOverlay({
     x: Math.round(window.screenX + fieldRect.left + 14),
     y: Math.round(window.screenY + fieldRect.top - 34),
+    label: pendingCorrection.changeCount > 1 ? `${pendingCorrection.changeCount} fixes available` : "Fix sentence",
     text: "Tab"
   });
 }
@@ -187,9 +193,10 @@ permissionsButton.addEventListener("click", async () => {
 
   try {
     const permissions = await window.tabFix.requestPermissions();
-    permission.textContent = permissions.accessibility ? "Ready" : "Needs access";
-    permission.dataset.state = permissions.accessibility ? "ready" : "blocked";
-    permissionNote.textContent = permissions.accessibility
+    const hasNativeAccess = permissions.accessibility && permissions.inputMonitoring;
+    permission.textContent = hasNativeAccess ? "Ready" : "Needs access";
+    permission.dataset.state = hasNativeAccess ? "ready" : "blocked";
+    permissionNote.textContent = hasNativeAccess
       ? permissions.note
       : `Use + if needed and add the helper manually: ${permissions.helperPath ?? "native/macos/.build/debug/TabFixNative"}`;
   } finally {

@@ -12,6 +12,8 @@ export type CorrectionResult = {
   changed: boolean;
   fixes: string[];
   durationMs: number;
+  risk: "low" | "medium" | "high";
+  changeCount: number;
 };
 
 export type NativeStatus = {
@@ -50,6 +52,7 @@ export type OverlayPayload = {
   x: number;
   y: number;
   text?: string;
+  label?: string;
 };
 
 export type AppState = {
