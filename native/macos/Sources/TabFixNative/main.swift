@@ -152,6 +152,8 @@ final class CorrectionEngine {
     (#"\bsetence\b"#, "sentence"),
     (#"\bbecuase\b"#, "because"),
     (#"\brecieve\b"#, "receive"),
+    (#"\bwnat\b"#, "want"),
+    (#"\bpleas\b"#, "please"),
     (#"\bdosent\b"#, "doesn't")
   ]
   private let shorthandReplacements: [(pattern: String, replacement: String)] = [
